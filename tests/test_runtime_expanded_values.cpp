@@ -29,9 +29,29 @@ int main() {
     assert(protocol.apply_set("servo.engaged", "true", error, sizeof(error)));
     assert(servo.engaged.get());
 
+    autopilot.heading.set(120.0);
+    autopilot.heading_error.set(-3.5);
     boatimu.heading_lowpass.set(45.0);
-    assert(protocol.format_named_value("imu.heading_lowpass", out, sizeof(out)));
-    assert(std::strcmp(out, "imu.heading_lowpass=45.0000\n") == 0);
+    boatimu.alignment_counter.set(7.0);
+    boatimu.uptime.set(12.0);
+    servo.voltage.set(12.7);
+    servo.current.set(1.5);
+    servo.flags.set("ok");
+    servo.controller.set("pwm");
+    servo.amp_hours.set(0.25);
+    gps.track.set(180.0);
+    gps.source.set("nmea0183");
+    wind.speed.set(8.2);
+    wind.source.set("apparent");
+
+    assert(protocol.format_named_value("ap.heading", out, sizeof(out)));
+    assert(std::strcmp(out, "ap.heading=120.0000\n") == 0);
+    assert(protocol.format_named_value("servo.voltage", out, sizeof(out)));
+    assert(std::strcmp(out, "servo.voltage=12.7000\n") == 0);
+    assert(protocol.format_named_value("gps.source", out, sizeof(out)));
+    assert(std::strcmp(out, "gps.source=\"nmea0183\"\n") == 0);
+    assert(protocol.format_named_value("wind.speed", out, sizeof(out)));
+    assert(std::strcmp(out, "wind.speed=8.2000\n") == 0);
 
     return 0;
 }
