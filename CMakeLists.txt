@@ -32,6 +32,7 @@ add_runtime_test(test_runtime_protocol tests/test_runtime_protocol.cpp)
 add_runtime_test(test_runtime_value_catalog tests/test_runtime_value_catalog.cpp)
 add_runtime_test(test_runtime_server_compile tests/test_runtime_server_compile.cpp)
 add_runtime_test(test_runtime_local_io tests/test_runtime_loopback_min.cpp)
+add_runtime_test(test_runtime_periodic_io tests/test_runtime_periodic_io.cpp)
 add_runtime_test(test_runtime_error_paths tests/test_runtime_error_paths.cpp)
 add_runtime_test(test_runtime_expanded_values tests/test_runtime_expanded_values.cpp)
 
