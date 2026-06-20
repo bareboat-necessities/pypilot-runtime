@@ -20,7 +20,6 @@ target_include_directories(pypilot_runtime INTERFACE
 target_link_libraries(pypilot_runtime INTERFACE pypilot_event_loop)
 
 include(CTest)
-
 enable_testing()
 
 function(add_runtime_test target source)
@@ -32,6 +31,10 @@ endfunction()
 add_runtime_test(test_runtime_protocol tests/test_runtime_protocol.cpp)
 add_runtime_test(test_runtime_value_catalog tests/test_runtime_value_catalog.cpp)
 add_runtime_test(test_runtime_server_compile tests/test_runtime_server_compile.cpp)
+
+add_executable(test_runtime_extra tests/test_runtime_client_helper_compile.cpp)
+target_link_libraries(test_runtime_extra PRIVATE pypilot_runtime)
+add_test(NAME test_runtime_extra COMMAND test_runtime_extra)
 
 add_executable(runtime_server_example examples/RuntimeServerExample/RuntimeServerExample.cpp)
 target_link_libraries(runtime_server_example PRIVATE pypilot_runtime)
