@@ -1,24 +1,21 @@
 #include <cassert>
 #include <cstring>
-#include <unistd.h>
 
 #include <pypilot_runtime.hpp>
 #include <pypilot_runtime_client.hpp>
 
-static void spin_loop(pypilot_event_loop::EventLoop<64, 128>& runtime_loop) {
-    for (int i = 0; i < 80; ++i) {
-        runtime_loop.run_once();
-        usleep(1000);
-    }
+static void pump_for(pypilot_event_loop::EventLoop<64, 128>& runtime_loop, uint32_t milliseconds) {
+    runtime_loop.on_delay(milliseconds, [&] {
+        runtime_loop.request_exit();
+    });
+    runtime_loop.run_forever();
 }
 
 static bool drain_until(pypilot_runtime::PypilotRuntimeClient<>& client, const char* expected) {
     char line[160]{};
-    for (int i = 0; i < 10; ++i) {
-        while (client.read_line(line, sizeof(line))) {
-            if (std::strcmp(line, expected) == 0) {
-                return true;
-            }
+    while (client.read_line(line, sizeof(line))) {
+        if (std::strcmp(line, expected) == 0) {
+            return true;
         }
     }
     return false;
@@ -42,35 +39,35 @@ int main() {
 
     pypilot_runtime::PypilotRuntimeClient<> client(runtime_loop);
     assert(client.open("127.0.0.1", server.port()));
-    spin_loop(runtime_loop);
+    pump_for(runtime_loop, 25);
     assert(client.connected());
 
     assert(client.set_bool("ap.enabled", true));
-    spin_loop(runtime_loop);
+    pump_for(runtime_loop, 25);
     assert(autopilot.enabled.get());
 
     assert(client.set_number("servo.command", -0.15));
-    spin_loop(runtime_loop);
+    pump_for(runtime_loop, 25);
     assert(servo.command.get() < -0.149 && servo.command.get() > -0.151);
 
     assert(client.watch("imu.heading", 0.0));
-    spin_loop(runtime_loop);
+    pump_for(runtime_loop, 25);
     assert(drain_until(client, "imu.heading=0.0000"));
 
     boatimu.heading.set(42.0);
     server.publish_changed_values();
-    spin_loop(runtime_loop);
+    pump_for(runtime_loop, 25);
     assert(drain_until(client, "imu.heading=42.0000"));
 
     assert(client.unwatch("imu.heading"));
-    spin_loop(runtime_loop);
+    pump_for(runtime_loop, 25);
     boatimu.heading.set(43.0);
     server.publish_changed_values();
-    spin_loop(runtime_loop);
+    pump_for(runtime_loop, 25);
     assert(!drain_until(client, "imu.heading=43.0000"));
 
     client.close();
-    spin_loop(runtime_loop);
+    pump_for(runtime_loop, 25);
     server.close();
     return 0;
 }
