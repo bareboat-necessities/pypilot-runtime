@@ -25,10 +25,10 @@ int main() {
     pypilot_runtime::PypilotRuntimeState state{autopilot, boatimu, sensors, servo, pilots, gps, wind};
     pypilot_runtime::PypilotRuntimeProtocol protocol(state);
     pypilot_runtime::PypilotRuntimeServer<2, 8> server(runtime_loop, protocol);
-    assert(server.listen("localhost", 0));
+    assert(server.listen("127.0.0.1", 0));
 
     pypilot_runtime::PypilotRuntimeClient<> client(runtime_loop);
-    assert(client.open("localhost", server.port()));
+    assert(client.open("127.0.0.1", server.port()));
     spin_loop(runtime_loop);
     assert(client.connected());
 
