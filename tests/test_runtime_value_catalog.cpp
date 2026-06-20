@@ -15,12 +15,16 @@ int main() {
     pypilot_runtime::PypilotRuntimeState state{autopilot, boatimu, sensors, servo, pilots, gps, wind};
     pypilot_runtime::PypilotRuntimeProtocol protocol(state);
 
-    char out[1024]{};
+    char out[2048]{};
     assert(protocol.write_values_catalog(out, sizeof(out)));
     assert(std::strlen(out) > 100);
     assert(std::strstr(out, "ap.enabled") != nullptr);
+    assert(std::strstr(out, "ap.heading_command") != nullptr);
+    assert(std::strstr(out, "ap.pilot") != nullptr);
     assert(std::strstr(out, "servo.command") != nullptr);
+    assert(std::strstr(out, "servo.engaged") != nullptr);
     assert(std::strstr(out, "imu.heading") != nullptr);
+    assert(std::strstr(out, "imu.heading_lowpass") != nullptr);
     assert(out[std::strlen(out) - 1] == '\n');
     return 0;
 }
