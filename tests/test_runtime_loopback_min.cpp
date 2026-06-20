@@ -1,4 +1,5 @@
 #include <cassert>
+#include <cstring>
 #include <unistd.h>
 
 #include <pypilot_runtime.hpp>
@@ -9,6 +10,18 @@ static void spin_loop(pypilot_event_loop::EventLoop<64, 128>& runtime_loop) {
         runtime_loop.run_once();
         usleep(1000);
     }
+}
+
+static bool drain_until(pypilot_runtime::PypilotRuntimeClient<>& client, const char* expected) {
+    char line[160]{};
+    for (int i = 0; i < 10; ++i) {
+        while (client.read_line(line, sizeof(line))) {
+            if (std::strcmp(line, expected) == 0) {
+                return true;
+            }
+        }
+    }
+    return false;
 }
 
 int main() {
@@ -40,7 +53,24 @@ int main() {
     spin_loop(runtime_loop);
     assert(servo.command.get() < -0.149 && servo.command.get() > -0.151);
 
+    assert(client.watch("imu.heading", 0.0));
+    spin_loop(runtime_loop);
+    assert(drain_until(client, "imu.heading=0.0000"));
+
+    boatimu.heading.set(42.0);
+    server.publish_changed_values();
+    spin_loop(runtime_loop);
+    assert(drain_until(client, "imu.heading=42.0000"));
+
+    assert(client.unwatch("imu.heading"));
+    spin_loop(runtime_loop);
+    boatimu.heading.set(43.0);
+    server.publish_changed_values();
+    spin_loop(runtime_loop);
+    assert(!drain_until(client, "imu.heading=43.0000"));
+
     client.close();
+    spin_loop(runtime_loop);
     server.close();
     return 0;
 }
