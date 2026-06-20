@@ -1,5 +1,6 @@
 #pragma once
 
+#include <stdio.h>
 #include <string.h>
 
 #include <pypilot_event_loop.hpp>
@@ -122,8 +123,12 @@ private:
             return;
         }
         if (strcmp(line, "values") == 0 || strcmp(line, "values=true") == 0) {
-            char out[1024]{};
-            if (protocol_.write_values_catalog(out, sizeof(out))) send_line(connection, out);
+            char out[2048]{};
+            if (protocol_.write_values_catalog(out, sizeof(out))) {
+                send_line(connection, out);
+            } else {
+                send_line(connection, "error=values catalog too large\n");
+            }
             return;
         }
         const char* eq = strchr(line, '=');
@@ -190,7 +195,11 @@ private:
             if (!colon) break;
             ++colon;
             const PypilotValueId id = parse_value_name(name);
-            if (strncmp(colon, "false", 5) == 0) {
+            if (id == PypilotValueId::Unknown) {
+                char error[128]{};
+                snprintf(error, sizeof(error), "error=unknown watch %s\n", name);
+                send_line(connection, error);
+            } else if (strncmp(colon, "false", 5) == 0) {
                 remove_watch(*slot, id);
             } else {
                 double period = 0.0;
