@@ -39,19 +39,15 @@ public:
     void publish_changed_values() {
         const uint64_t now_us = now();
         const PypilotValueId ids[] = {
-            PypilotValueId::ApEnabled,
-            PypilotValueId::ApMode,
-            PypilotValueId::ApPilot,
-            PypilotValueId::ApHeadingCommand,
-            PypilotValueId::ImuHeading,
-            PypilotValueId::ImuRoll,
-            PypilotValueId::ImuPitch,
-            PypilotValueId::ImuHeadingLowpass,
-            PypilotValueId::ServoCommand,
-            PypilotValueId::ServoEngaged,
-            PypilotValueId::ServoState,
-            PypilotValueId::GpsSpeed,
-            PypilotValueId::WindDirection
+            PypilotValueId::ApEnabled, PypilotValueId::ApMode, PypilotValueId::ApPilot,
+            PypilotValueId::ApHeadingCommand, PypilotValueId::ApHeading, PypilotValueId::ApHeadingError,
+            PypilotValueId::ImuHeading, PypilotValueId::ImuRoll, PypilotValueId::ImuPitch,
+            PypilotValueId::ImuHeadingLowpass, PypilotValueId::ImuAlignmentCounter, PypilotValueId::ImuUptime,
+            PypilotValueId::ServoCommand, PypilotValueId::ServoEngaged, PypilotValueId::ServoState,
+            PypilotValueId::ServoFlags, PypilotValueId::ServoVoltage, PypilotValueId::ServoCurrent,
+            PypilotValueId::ServoController, PypilotValueId::ServoAmpHours,
+            PypilotValueId::GpsSpeed, PypilotValueId::GpsTrack, PypilotValueId::GpsSource,
+            PypilotValueId::WindDirection, PypilotValueId::WindSpeed, PypilotValueId::WindSource
         };
         for (size_t i = 0; i < sizeof(ids) / sizeof(ids[0]); ++i) {
             if (protocol_.changed(ids[i])) {
