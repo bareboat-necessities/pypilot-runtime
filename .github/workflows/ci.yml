@@ -1,0 +1,59 @@
+name: CI
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  linux:
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Checkout runtime
+        uses: actions/checkout@v4
+        with:
+          path: pypilot-runtime
+
+      - name: Checkout event loop
+        uses: actions/checkout@v4
+        with:
+          repository: bareboat-necessities/pypilot-event-loop
+          path: pypilot-event-loop
+
+      - name: Install dependencies
+        run: sudo apt-get update && sudo apt-get install -y cmake g++ pkg-config libevent-dev libgpiod-dev
+
+      - name: Configure
+        run: cmake -S pypilot-runtime -B build -DPYPILOT_EVENT_LOOP_DIR=$GITHUB_WORKSPACE/pypilot-event-loop
+
+      - name: Build
+        run: cmake --build build --parallel
+
+      - name: Test
+        run: ctest --test-dir build --output-on-failure
+
+  arduino-esp32:
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Checkout runtime
+        uses: actions/checkout@v4
+        with:
+          path: Arduino/libraries/pypilot-runtime
+
+      - name: Checkout event loop
+        uses: actions/checkout@v4
+        with:
+          repository: bareboat-necessities/pypilot-event-loop
+          path: Arduino/libraries/pypilot-event-loop
+
+      - name: Setup Arduino CLI
+        uses: arduino/setup-arduino-cli@v2
+
+      - name: Install ESP32 core
+        run: |
+          arduino-cli config init --overwrite
+          arduino-cli config add board_manager.additional_urls https://raw.githubusercontent.com/espressif/arduino-esp32/gh-pages/package_esp32_index.json
+          arduino-cli core update-index
+          arduino-cli core install esp32:esp32
+
+      - name: Compile shared runtime server example
+        run: arduino-cli compile --fqbn esp32:esp32:esp32s3 Arduino/libraries/pypilot-runtime/examples/RuntimeServerExample
