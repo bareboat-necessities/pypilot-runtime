@@ -3,7 +3,7 @@
 #include <stddef.h>
 #include <stdint.h>
 
-#include <pypilot_runtime.hpp>
+#include <pypilot_runtime_core.hpp>
 
 namespace pypilot_runtime {
 
