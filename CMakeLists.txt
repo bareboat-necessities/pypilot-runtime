@@ -31,6 +31,7 @@ endfunction()
 add_runtime_test(test_runtime_protocol tests/test_runtime_protocol.cpp)
 add_runtime_test(test_runtime_value_catalog tests/test_runtime_value_catalog.cpp)
 add_runtime_test(test_runtime_server_compile tests/test_runtime_server_compile.cpp)
+add_runtime_test(test_runtime_local_io tests/test_runtime_loopback_min.cpp)
 
 add_executable(test_runtime_extra tests/test_runtime_client_helper_compile.cpp)
 target_link_libraries(test_runtime_extra PRIVATE pypilot_runtime)
