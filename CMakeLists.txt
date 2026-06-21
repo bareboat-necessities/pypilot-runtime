@@ -39,6 +39,7 @@ if(PYPILOT_RUNTIME_WITH_SETTINGS)
 endif()
 if(PYPILOT_RUNTIME_WITH_MDNS)
     target_link_libraries(pypilot_runtime INTERFACE pypilot_mdns)
+    target_compile_definitions(pypilot_runtime INTERFACE PYPILOT_RUNTIME_WITH_MDNS=1)
 endif()
 
 include(CTest)
@@ -63,6 +64,9 @@ add_runtime_test(test_runtime_expanded_values tests/test_runtime_expanded_values
 add_runtime_test(test_runtime_client_helper_compile tests/test_runtime_client_helper_compile.cpp)
 if(PYPILOT_RUNTIME_WITH_SETTINGS)
     add_runtime_test(test_runtime_settings_bridge tests/test_runtime_settings_bridge.cpp)
+endif()
+if(PYPILOT_RUNTIME_WITH_MDNS)
+    add_runtime_test(test_runtime_mdns_compile tests/test_runtime_mdns_compile.cpp)
 endif()
 
 add_executable(runtime_server_example examples/RuntimeServerExample/RuntimeServerExample.cpp)
