@@ -21,6 +21,10 @@ public:
                 ok = false;
                 continue;
             }
+            if (!settings.validate_value(ds[i].name, value, error, sizeof(error))) {
+                ok = false;
+                continue;
+            }
             if (!protocol.apply_set(ds[i].name, value, error, sizeof(error))) {
                 ok = false;
             }
@@ -28,11 +32,11 @@ public:
         return ok;
     }
 
-    static bool save_if_persistent(const char* name,
-                                   const char* payload,
-                                   pypilot_settings::SettingsManager& settings,
-                                   char* error,
-                                   size_t error_size) {
+    static bool save_if_known(const char* name,
+                              const char* payload,
+                              pypilot_settings::SettingsManager& settings,
+                              char* error,
+                              size_t error_size) {
         const pypilot_settings::SettingsCatalog runtime_catalog = catalog();
         if (!runtime_catalog.find(name)) {
             return true;
@@ -46,10 +50,18 @@ public:
                                    const char* payload,
                                    char* error,
                                    size_t error_size) {
+        const pypilot_settings::SettingsCatalog runtime_catalog = catalog();
+        const bool known = runtime_catalog.find(name) != nullptr;
+        if (known && !settings.validate_value(name, payload, error, error_size)) {
+            return false;
+        }
         if (!protocol.apply_set(name, payload, error, error_size)) {
             return false;
         }
-        return save_if_persistent(name, payload, settings, error, error_size);
+        if (!known) {
+            return true;
+        }
+        return settings.save_value(name, payload, error, error_size);
     }
 
 private:
