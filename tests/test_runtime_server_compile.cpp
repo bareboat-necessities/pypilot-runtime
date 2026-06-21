@@ -17,6 +17,13 @@ int main() {
     pypilot_runtime::PypilotRuntimeProtocol protocol(state);
     pypilot_runtime::PypilotRuntimeServer<2, 4> server(loop, protocol);
 
+    pypilot_runtime::PypilotRuntimeServerOptions options;
+    options.tcp_timeouts.read_timeout_ms = 1000;
+    options.tcp_timeouts.write_timeout_ms = 1000;
+    options.tcp_watermarks.read_low = 1;
+    options.max_output_bytes = 4096;
+    assert(server.configure(options));
+
     pypilot_event_loop::TcpTimeoutOptions timeouts;
     timeouts.read_timeout_ms = 1000;
     timeouts.write_timeout_ms = 1000;
