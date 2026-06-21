@@ -7,6 +7,7 @@ set(CMAKE_CXX_EXTENSIONS OFF)
 
 set(PYPILOT_EVENT_LOOP_DIR "${CMAKE_CURRENT_SOURCE_DIR}/../pypilot-event-loop" CACHE PATH "Path to pypilot-event-loop checkout")
 set(PYPILOT_SETTINGS_DIR "${CMAKE_CURRENT_SOURCE_DIR}/../pypilot-settings" CACHE PATH "Path to pypilot-settings checkout")
+set(PYPILOT_MDNS_DIR "${CMAKE_CURRENT_SOURCE_DIR}/../pypilot-mdns" CACHE PATH "Path to pypilot-mdns checkout")
 
 if(EXISTS "${PYPILOT_EVENT_LOOP_DIR}/CMakeLists.txt")
     add_subdirectory("${PYPILOT_EVENT_LOOP_DIR}" "${CMAKE_CURRENT_BINARY_DIR}/pypilot-event-loop")
@@ -21,6 +22,13 @@ else()
     set(PYPILOT_RUNTIME_WITH_SETTINGS OFF)
 endif()
 
+if(EXISTS "${PYPILOT_MDNS_DIR}/CMakeLists.txt")
+    add_subdirectory("${PYPILOT_MDNS_DIR}" "${CMAKE_CURRENT_BINARY_DIR}/pypilot-mdns")
+    set(PYPILOT_RUNTIME_WITH_MDNS ON)
+else()
+    set(PYPILOT_RUNTIME_WITH_MDNS OFF)
+endif()
+
 add_library(pypilot_runtime INTERFACE)
 target_include_directories(pypilot_runtime INTERFACE
     ${CMAKE_CURRENT_SOURCE_DIR}/src
@@ -28,6 +36,9 @@ target_include_directories(pypilot_runtime INTERFACE
 target_link_libraries(pypilot_runtime INTERFACE pypilot_event_loop)
 if(PYPILOT_RUNTIME_WITH_SETTINGS)
     target_link_libraries(pypilot_runtime INTERFACE pypilot_settings)
+endif()
+if(PYPILOT_RUNTIME_WITH_MDNS)
+    target_link_libraries(pypilot_runtime INTERFACE pypilot_mdns)
 endif()
 
 include(CTest)
