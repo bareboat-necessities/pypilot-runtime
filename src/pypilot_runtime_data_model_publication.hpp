@@ -1,82 +1,76 @@
 #pragma once
 
-#include <stdio.h>
-
 #include <pypilot_data_model.hpp>
 #include <pypilot_runtime.hpp>
 
 namespace pypilot_runtime {
 
 template<typename Real>
+inline bool publish_number_if_valid(const pypilot_data_model::Stamped<Real>& src, RuntimeNumber& dst) {
+    if (!src.valid) return false;
+    dst.set(static_cast<double>(src.value));
+    return true;
+}
+
+template<typename Real>
 inline size_t publish_data_model_to_runtime(PypilotRuntimeState& state,
                                             const pypilot_data_model::DataModel<Real>& model) {
-    size_t count = 0;
-    const pypilot_data_model::RuntimeValueMetadata* values = pypilot_data_model::core_runtime_values(count);
     size_t published = 0;
 
-    for (size_t i = 0; i < count; ++i) {
-        const pypilot_data_model::RuntimeValueMetadata& meta = values[i];
-        Real number = Real(0);
-        bool boolean = false;
-        const char* text = 0;
-        char scratch[32]{};
+    state.autopilot.enabled.set(model.ap.enabled.value); ++published;
+    state.autopilot.mode.set(pypilot_data_model::autopilot_mode_name(model.ap.mode.value)); ++published;
+    state.autopilot.preferred_mode.set(pypilot_data_model::autopilot_mode_name(model.ap.preferred_mode.value)); ++published;
+    state.autopilot.pilot.set(pypilot_data_model::pilot_name(model.ap.pilot.value)); ++published;
 
-        switch (meta.type) {
-        case pypilot_data_model::RuntimeValueType::boolean:
-            if (!pypilot_data_model::read_bool(model, meta.field_id, boolean)) break;
-            if (meta.field_id == pypilot_data_model::FieldId::ap_enabled) { state.autopilot.enabled.set(boolean); ++published; }
-            else if (meta.field_id == pypilot_data_model::FieldId::servo_engaged) { state.servo.engaged.set(boolean); ++published; }
-            break;
+    if (publish_number_if_valid(model.ap.heading_command_deg, state.autopilot.heading_command)) ++published;
+    if (publish_number_if_valid(model.ap.heading_deg, state.autopilot.heading)) ++published;
+    if (publish_number_if_valid(model.ap.heading_error_deg, state.autopilot.heading_error)) ++published;
 
-        case pypilot_data_model::RuntimeValueType::number:
-        case pypilot_data_model::RuntimeValueType::integer:
-            if (!pypilot_data_model::read_number(model, meta.field_id, number)) break;
-            switch (meta.field_id) {
-            case pypilot_data_model::FieldId::ap_heading_command_deg: state.autopilot.heading_command.set(static_cast<double>(number)); ++published; break;
-            case pypilot_data_model::FieldId::ap_heading_deg: state.autopilot.heading.set(static_cast<double>(number)); ++published; break;
-            case pypilot_data_model::FieldId::ap_heading_error_deg: state.autopilot.heading_error.set(static_cast<double>(number)); ++published; break;
-            case pypilot_data_model::FieldId::imu_heading_deg: state.boatimu.heading.set(static_cast<double>(number)); ++published; break;
-            case pypilot_data_model::FieldId::imu_roll_deg: state.boatimu.roll.set(static_cast<double>(number)); ++published; break;
-            case pypilot_data_model::FieldId::imu_pitch_deg: state.boatimu.pitch.set(static_cast<double>(number)); ++published; break;
-            case pypilot_data_model::FieldId::imu_heading_lowpass_deg: state.boatimu.heading_lowpass.set(static_cast<double>(number)); ++published; break;
-            case pypilot_data_model::FieldId::servo_command_norm: state.servo.command.set(static_cast<double>(number)); ++published; break;
-            case pypilot_data_model::FieldId::servo_voltage_v: state.servo.voltage.set(static_cast<double>(number)); ++published; break;
-            case pypilot_data_model::FieldId::servo_current_a: state.servo.current.set(static_cast<double>(number)); ++published; break;
-            case pypilot_data_model::FieldId::servo_amp_hours_ah: state.servo.amp_hours.set(static_cast<double>(number)); ++published; break;
-            case pypilot_data_model::FieldId::servo_flags:
-                snprintf(scratch, sizeof(scratch), "%lu", static_cast<unsigned long>(number));
-                state.servo.flags.set(scratch);
-                ++published;
-                break;
-            case pypilot_data_model::FieldId::gps_speed_kn: state.gps.speed.set(static_cast<double>(number)); ++published; break;
-            case pypilot_data_model::FieldId::gps_track_deg: state.gps.track.set(static_cast<double>(number)); ++published; break;
-            case pypilot_data_model::FieldId::wind_direction_deg: state.wind.direction.set(static_cast<double>(number)); ++published; break;
-            case pypilot_data_model::FieldId::wind_speed_kn: state.wind.speed.set(static_cast<double>(number)); ++published; break;
-            default: break;
-            }
-            break;
+    if (publish_number_if_valid(model.imu.heading_deg, state.boatimu.heading)) ++published;
+    if (publish_number_if_valid(model.imu.roll_deg, state.boatimu.roll)) ++published;
+    if (publish_number_if_valid(model.imu.pitch_deg, state.boatimu.pitch)) ++published;
+    if (publish_number_if_valid(model.imu.heel_deg, state.boatimu.heel)) ++published;
+    if (publish_number_if_valid(model.imu.heading_rate_deg_s, state.boatimu.headingrate)) ++published;
+    if (publish_number_if_valid(model.imu.heading_lowpass_deg, state.boatimu.heading_lowpass)) ++published;
+    if (model.imu.alignment_counter.value >= 0) { state.boatimu.alignment_counter.set(static_cast<double>(model.imu.alignment_counter.value)); ++published; }
+    if (publish_number_if_valid(model.imu.uptime_s, state.boatimu.uptime)) ++published;
 
-        case pypilot_data_model::RuntimeValueType::mode:
-            if (meta.field_id == pypilot_data_model::FieldId::ap_mode) {
-                state.autopilot.mode.set(pypilot_data_model::autopilot_mode_name(model.ap.mode.value));
-                ++published;
-            }
-            break;
+    state.servo.engaged.set(model.servo.engaged.value); ++published;
+    if (model.servo.command_norm.valid) { state.servo.command.set(model.servo.command_norm.value); ++published; }
+    if (publish_number_if_valid(model.servo.voltage_v, state.servo.voltage)) ++published;
+    if (publish_number_if_valid(model.servo.current_a, state.servo.current)) ++published;
+    if (publish_number_if_valid(model.servo.position_deg, state.servo.position)) ++published;
+    if (publish_number_if_valid(model.servo.controller_temp_c, state.servo.controller_temp)) ++published;
+    if (publish_number_if_valid(model.servo.motor_temp_c, state.servo.motor_temp)) ++published;
+    if (model.servo.amp_hours_ah.value != 0.0f) { state.servo.amp_hours.set(model.servo.amp_hours_ah.value); ++published; }
 
-        case pypilot_data_model::RuntimeValueType::pilot_name:
-            if (meta.field_id == pypilot_data_model::FieldId::ap_pilot) {
-                state.autopilot.pilot.set(pypilot_data_model::pilot_name(model.ap.pilot.value));
-                ++published;
-            }
-            break;
+    if (publish_number_if_valid(model.navigation.gps.speed_kn, state.gps.speed)) ++published;
+    if (publish_number_if_valid(model.navigation.gps.track_deg, state.gps.track)) ++published;
+    if (publish_number_if_valid(model.navigation.gps.timestamp_s, state.gps.timestamp)) ++published;
+    state.gps.source.set(pypilot_data_model::sensor_source_name(model.navigation.gps.source.value)); ++published;
 
-        case pypilot_data_model::RuntimeValueType::string_value:
-            if (!pypilot_data_model::read_string(model, meta.field_id, text)) break;
-            if (meta.field_id == pypilot_data_model::FieldId::server_version) {
-                (void)text;
-            }
-            break;
-        }
+    if (publish_number_if_valid(model.wind.apparent.direction_deg, state.wind.direction)) ++published;
+    if (publish_number_if_valid(model.wind.apparent.speed_kn, state.wind.speed)) ++published;
+    state.wind.source.set(pypilot_data_model::sensor_source_name(model.wind.apparent.source.value)); ++published;
+
+    if (publish_number_if_valid(model.wind.truewind.direction_deg, state.sensors.truewind_direction)) ++published;
+    if (publish_number_if_valid(model.wind.truewind.speed_kn, state.sensors.truewind_speed)) ++published;
+    state.sensors.truewind_source.set(pypilot_data_model::sensor_source_name(model.wind.truewind.source.value)); ++published;
+
+    if (publish_number_if_valid(model.water.speed_kn, state.sensors.water_speed)) ++published;
+    if (publish_number_if_valid(model.rudder.angle_deg, state.sensors.rudder_angle)) ++published;
+
+    state.pilots.tack_state.set(static_cast<double>(model.tack.state.value)); ++published;
+    state.pilots.tack_direction.set(static_cast<double>(model.tack.direction.value)); ++published;
+
+    state.sensors.profile_name.set(model.server.profile_name); ++published;
+    state.sensors.server_version.set(model.server.version); ++published;
+    if (publish_number_if_valid(model.server.uptime_s, state.sensors.server_uptime)) ++published;
+    state.sensors.status_faults.set(static_cast<double>(model.status.faults.value)); ++published;
+    state.sensors.status_warnings.set(static_cast<double>(model.status.warnings.value)); ++published;
+    if (model.runtime_publication.published_value_count.valid) {
+        state.sensors.runtime_published_value_count.set(static_cast<double>(model.runtime_publication.published_value_count.value));
+        ++published;
     }
 
     return published;
