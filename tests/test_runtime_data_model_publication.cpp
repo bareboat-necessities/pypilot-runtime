@@ -22,7 +22,7 @@ int main() {
     model.ap.heading_deg.set(123.0f, 100);
     model.imu.heading_lowpass_deg.set(122.5f, 100);
     model.servo.current_a.set(1.5f, 100);
-    model.gps.speed_kn.set(5.0f, 100);
+    model.navigation.gps.speed_kn.set(5.0f, 100);
     model.wind.apparent.speed_kn.set(10.0f, 100);
 
     const size_t published = publish_data_model_to_runtime(state, model);
