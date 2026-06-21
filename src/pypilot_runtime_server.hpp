@@ -31,6 +31,18 @@ public:
     uint16_t port() const { return server_.port(); }
     size_t connection_count() const { return server_.connection_count(); }
 
+    void set_tcp_timeouts(const pypilot_event_loop::TcpTimeoutOptions& options) {
+        tcp_timeouts_ = options;
+    }
+
+    void set_tcp_watermarks(const pypilot_event_loop::TcpWatermarkOptions& options) {
+        tcp_watermarks_ = options;
+    }
+
+    void set_max_output_bytes(size_t max_output_bytes) {
+        max_output_bytes_ = max_output_bytes;
+    }
+
     void close() {
         server_.close();
         reset_slots();
@@ -64,6 +76,7 @@ public:
             connection.close();
             return;
         }
+        apply_tcp_options(connection);
         slot->connection = &connection;
         slot->watch_count = 0;
     }
@@ -87,6 +100,24 @@ private:
 
     uint64_t now() const { return clock_ ? clock_->micros() : 0; }
 
+    bool has_tcp_timeouts() const {
+        return tcp_timeouts_.read_timeout_ms != 0 || tcp_timeouts_.write_timeout_ms != 0;
+    }
+
+    bool has_tcp_watermarks() const {
+        return tcp_watermarks_.read_low != 0 || tcp_watermarks_.read_high != 0 ||
+               tcp_watermarks_.write_low != 0 || tcp_watermarks_.write_high != 0;
+    }
+
+    void apply_tcp_options(pypilot_event_loop::ITcpConnection& connection) {
+        if (has_tcp_timeouts()) {
+            connection.set_timeouts(tcp_timeouts_);
+        }
+        if (has_tcp_watermarks()) {
+            connection.set_watermarks(tcp_watermarks_);
+        }
+    }
+
     ConnectionSlot* slot_for(pypilot_event_loop::ITcpConnection* connection) {
         for (size_t i = 0; i < MaxConnections; ++i) {
             if (slots_[i].connection == connection) return &slots_[i];
@@ -109,8 +140,26 @@ private:
         }
     }
 
+    bool output_limit_exceeded(pypilot_event_loop::ITcpConnection& connection) const {
+        return max_output_bytes_ != 0 && connection.output_size() > max_output_bytes_;
+    }
+
     bool send_line(pypilot_event_loop::ITcpConnection& connection, const char* line) {
-        return connection.write(reinterpret_cast<const uint8_t*>(line), strlen(line)) >= 0;
+        if (max_output_bytes_ != 0 && connection.output_size() >= max_output_bytes_) {
+            clear_connection(connection);
+            connection.close();
+            return false;
+        }
+        const int written = connection.write(reinterpret_cast<const uint8_t*>(line), strlen(line));
+        if (written < 0) {
+            return false;
+        }
+        if (output_limit_exceeded(connection)) {
+            clear_connection(connection);
+            connection.close();
+            return false;
+        }
+        return true;
     }
 
     void handle_line(pypilot_event_loop::ITcpConnection& connection, const char* line) {
@@ -240,7 +289,10 @@ private:
 
     pypilot_event_loop::NativeTcpServer server_;
     PypilotRuntimeProtocol& protocol_;
-    pypilot_event_loop::NativeClock* clock_ = nullptr;
+    pypilot_event_loop::IClock* clock_ = nullptr;
+    pypilot_event_loop::TcpTimeoutOptions tcp_timeouts_{};
+    pypilot_event_loop::TcpWatermarkOptions tcp_watermarks_{};
+    size_t max_output_bytes_ = 0;
     ConnectionSlot slots_[MaxConnections]{};
 };
 
