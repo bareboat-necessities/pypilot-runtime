@@ -1,6 +1,7 @@
 #pragma once
 
 #include <stdio.h>
+#include <stdlib.h>
 #include <string.h>
 
 #include <pypilot_event_loop.hpp>
@@ -12,12 +13,30 @@ namespace pypilot_runtime {
 
 #if defined(__linux__) || (defined(ARDUINO) && defined(PYPILOT_EVENT_LOOP_ENABLE_ARDUINO_WIFI_TCP))
 
+struct PypilotRuntimeServerOptions {
+    pypilot_event_loop::TcpTimeoutOptions tcp_timeouts{};
+    pypilot_event_loop::TcpWatermarkOptions tcp_watermarks{};
+    size_t max_output_bytes = 0;
+    uint16_t udp_watch_port = 0;
+    bool udp_watch_reuse_address = true;
+};
+
 template<size_t MaxConnections = 8, size_t MaxWatchesPerConnection = 16>
 class PypilotRuntimeServer final : public pypilot_event_loop::ITcpServerHandler {
 public:
     template<typename EventLoopType>
     PypilotRuntimeServer(EventLoopType& loop, PypilotRuntimeProtocol& protocol)
         : server_(loop.scheduler(), MaxConnections), protocol_(protocol), clock_(&loop.clock()) {}
+
+    bool configure(const PypilotRuntimeServerOptions& options) {
+        set_tcp_timeouts(options.tcp_timeouts);
+        set_tcp_watermarks(options.tcp_watermarks);
+        set_max_output_bytes(options.max_output_bytes);
+        if (options.udp_watch_port != 0) {
+            return enable_udp_watch_stream(options.udp_watch_port, options.udp_watch_reuse_address);
+        }
+        return true;
+    }
 
     bool listen(const char* host, uint16_t port) {
         pypilot_event_loop::TcpListenOptions options;
@@ -31,17 +50,31 @@ public:
     uint16_t port() const { return server_.port(); }
     size_t connection_count() const { return server_.connection_count(); }
 
-    void set_tcp_timeouts(const pypilot_event_loop::TcpTimeoutOptions& options) {
-        tcp_timeouts_ = options;
+    void set_tcp_timeouts(const pypilot_event_loop::TcpTimeoutOptions& options) { tcp_timeouts_ = options; }
+    void set_tcp_watermarks(const pypilot_event_loop::TcpWatermarkOptions& options) { tcp_watermarks_ = options; }
+    void set_max_output_bytes(size_t max_output_bytes) { max_output_bytes_ = max_output_bytes; }
+
+    bool enable_udp_watch_stream(uint16_t port, bool reuse_address = true) {
+#if defined(__linux__) || (defined(ARDUINO) && defined(PYPILOT_EVENT_LOOP_ENABLE_ARDUINO_WIFI_UDP))
+        udp_watch_enabled_ = udp_watch_stream_.bind(port, reuse_address);
+        return udp_watch_enabled_;
+#else
+        (void)port;
+        (void)reuse_address;
+        udp_watch_enabled_ = false;
+        return false;
+#endif
     }
 
-    void set_tcp_watermarks(const pypilot_event_loop::TcpWatermarkOptions& options) {
-        tcp_watermarks_ = options;
+    void disable_udp_watch_stream() {
+#if defined(__linux__) || (defined(ARDUINO) && defined(PYPILOT_EVENT_LOOP_ENABLE_ARDUINO_WIFI_UDP))
+        udp_watch_stream_.close();
+#endif
+        udp_watch_enabled_ = false;
+        for (size_t i = 0; i < MaxConnections; ++i) slots_[i].has_udp_peer = false;
     }
 
-    void set_max_output_bytes(size_t max_output_bytes) {
-        max_output_bytes_ = max_output_bytes;
-    }
+    bool udp_watch_enabled() const { return udp_watch_enabled_; }
 
     void close() {
         server_.close();
@@ -70,7 +103,7 @@ public:
         flush_due_periodic(now_us);
     }
 
-    void on_accept(pypilot_event_loop::ITcpConnection& connection, const pypilot_event_loop::TcpPeerInfo&) override {
+    void on_accept(pypilot_event_loop::ITcpConnection& connection, const pypilot_event_loop::TcpPeerInfo& peer) override {
         ConnectionSlot* slot = slot_for(nullptr);
         if (!slot) {
             connection.close();
@@ -78,14 +111,14 @@ public:
         }
         apply_tcp_options(connection);
         slot->connection = &connection;
+        slot->peer = peer;
         slot->watch_count = 0;
+        slot->has_udp_peer = false;
     }
 
     void on_data(pypilot_event_loop::ITcpConnection& connection) override {
         char line[320]{};
-        while (connection.read_line(line, sizeof(line))) {
-            handle_line(connection, line);
-        }
+        while (connection.read_line(line, sizeof(line))) handle_line(connection, line);
     }
 
     void on_close(pypilot_event_loop::ITcpConnection& connection) override { clear_connection(connection); }
@@ -94,34 +127,28 @@ public:
 private:
     struct ConnectionSlot {
         pypilot_event_loop::ITcpConnection* connection = nullptr;
+        pypilot_event_loop::TcpPeerInfo peer{};
+        pypilot_event_loop::UdpEndpoint udp_peer{};
+        bool has_udp_peer = false;
         RuntimeWatchPeriod watches[MaxWatchesPerConnection]{};
         size_t watch_count = 0;
     };
 
     uint64_t now() const { return clock_ ? clock_->micros() : 0; }
 
-    bool has_tcp_timeouts() const {
-        return tcp_timeouts_.read_timeout_ms != 0 || tcp_timeouts_.write_timeout_ms != 0;
-    }
-
+    bool has_tcp_timeouts() const { return tcp_timeouts_.read_timeout_ms != 0 || tcp_timeouts_.write_timeout_ms != 0; }
     bool has_tcp_watermarks() const {
         return tcp_watermarks_.read_low != 0 || tcp_watermarks_.read_high != 0 ||
                tcp_watermarks_.write_low != 0 || tcp_watermarks_.write_high != 0;
     }
 
     void apply_tcp_options(pypilot_event_loop::ITcpConnection& connection) {
-        if (has_tcp_timeouts()) {
-            connection.set_timeouts(tcp_timeouts_);
-        }
-        if (has_tcp_watermarks()) {
-            connection.set_watermarks(tcp_watermarks_);
-        }
+        if (has_tcp_timeouts()) connection.set_timeouts(tcp_timeouts_);
+        if (has_tcp_watermarks()) connection.set_watermarks(tcp_watermarks_);
     }
 
     ConnectionSlot* slot_for(pypilot_event_loop::ITcpConnection* connection) {
-        for (size_t i = 0; i < MaxConnections; ++i) {
-            if (slots_[i].connection == connection) return &slots_[i];
-        }
+        for (size_t i = 0; i < MaxConnections; ++i) if (slots_[i].connection == connection) return &slots_[i];
         return nullptr;
     }
 
@@ -129,6 +156,7 @@ private:
         for (size_t i = 0; i < MaxConnections; ++i) {
             slots_[i].connection = nullptr;
             slots_[i].watch_count = 0;
+            slots_[i].has_udp_peer = false;
         }
     }
 
@@ -137,6 +165,7 @@ private:
         if (slot) {
             slot->connection = nullptr;
             slot->watch_count = 0;
+            slot->has_udp_peer = false;
         }
     }
 
@@ -151,9 +180,7 @@ private:
             return false;
         }
         const int written = connection.write(reinterpret_cast<const uint8_t*>(line), strlen(line));
-        if (written < 0) {
-            return false;
-        }
+        if (written < 0) return false;
         if (output_limit_exceeded(connection)) {
             clear_connection(connection);
             connection.close();
@@ -162,18 +189,62 @@ private:
         return true;
     }
 
+    bool parse_udp_port(const char* text, uint16_t& port) const {
+        if (!text) return false;
+        unsigned value = 0;
+        bool any = false;
+        while (*text >= '0' && *text <= '9') {
+            any = true;
+            value = value * 10u + static_cast<unsigned>(*text - '0');
+            if (value > 65535u) return false;
+            ++text;
+        }
+        if (!any) return false;
+        port = static_cast<uint16_t>(value);
+        return true;
+    }
+
+    void handle_udp_port(pypilot_event_loop::ITcpConnection& connection, const char* text) {
+        ConnectionSlot* slot = slot_for(&connection);
+        if (!slot) return;
+        uint16_t udp_port = 0;
+        if (!parse_udp_port(text, udp_port)) {
+            send_line(connection, "error=invalid udp_port\n");
+            return;
+        }
+        if (udp_port == 0) {
+            slot->has_udp_peer = false;
+            return;
+        }
+        copy_cstr(slot->udp_peer.host, sizeof(slot->udp_peer.host), slot->peer.host[0] ? slot->peer.host : "127.0.0.1");
+        slot->udp_peer.port = udp_port;
+        slot->has_udp_peer = true;
+    }
+
+    bool send_watch_line(ConnectionSlot& slot, const char* line) {
+        if (!slot.connection || !slot.connection->valid()) return false;
+#if defined(__linux__) || (defined(ARDUINO) && defined(PYPILOT_EVENT_LOOP_ENABLE_ARDUINO_WIFI_UDP))
+        if (udp_watch_enabled_ && slot.has_udp_peer) {
+            const int n = udp_watch_stream_.send_to(reinterpret_cast<const uint8_t*>(line), strlen(line), slot.udp_peer);
+            if (n == static_cast<int>(strlen(line))) return true;
+        }
+#endif
+        return send_line(*slot.connection, line);
+    }
+
     void handle_line(pypilot_event_loop::ITcpConnection& connection, const char* line) {
+        if (strncmp(line, "udp_port=", 9) == 0) {
+            handle_udp_port(connection, line + 9);
+            return;
+        }
         if (strncmp(line, "watch=", 6) == 0) {
             handle_watch(connection, line + 6);
             return;
         }
         if (strcmp(line, "values") == 0 || strcmp(line, "values=true") == 0) {
             char out[2048]{};
-            if (protocol_.write_values_catalog(out, sizeof(out))) {
-                send_line(connection, out);
-            } else {
-                send_line(connection, "error=values catalog too large\n");
-            }
+            if (protocol_.write_values_catalog(out, sizeof(out))) send_line(connection, out);
+            else send_line(connection, "error=values catalog too large\n");
             return;
         }
         const char* eq = strchr(line, '=');
@@ -198,9 +269,7 @@ private:
     }
 
     RuntimeWatchPeriod* find_watch(ConnectionSlot& slot, PypilotValueId id) {
-        for (size_t i = 0; i < slot.watch_count; ++i) {
-            if (slot.watches[i].id == id) return &slot.watches[i];
-        }
+        for (size_t i = 0; i < slot.watch_count; ++i) if (slot.watches[i].id == id) return &slot.watches[i];
         return nullptr;
     }
 
@@ -249,15 +318,15 @@ private:
             } else {
                 double period = 0.0;
                 parse_number_text(colon, period);
-                if (add_watch(*slot, id, period)) send_formatted_value(connection, id);
+                if (add_watch(*slot, id, period)) send_formatted_value(*slot, id);
             }
             p = colon;
         }
     }
 
-    void send_formatted_value(pypilot_event_loop::ITcpConnection& connection, PypilotValueId id) {
+    void send_formatted_value(ConnectionSlot& slot, PypilotValueId id) {
         char out[160]{};
-        if (protocol_.format_value(id, out, sizeof(out))) send_line(connection, out);
+        if (protocol_.format_value(id, out, sizeof(out))) send_watch_line(slot, out);
     }
 
     void mark_or_publish_changed(PypilotValueId id, uint64_t now_us) {
@@ -267,9 +336,7 @@ private:
             for (size_t j = 0; j < slot.watch_count; ++j) {
                 RuntimeWatchPeriod& watch = slot.watches[j];
                 if (watch.id != id) continue;
-                if (mark_runtime_watch_pending(watch, now_us)) {
-                    send_formatted_value(*slot.connection, id);
-                }
+                if (mark_runtime_watch_pending(watch, now_us)) send_formatted_value(slot, id);
             }
         }
     }
@@ -280,9 +347,7 @@ private:
             if (!slot.connection || !slot.connection->valid()) continue;
             for (size_t j = 0; j < slot.watch_count; ++j) {
                 RuntimeWatchPeriod& watch = slot.watches[j];
-                if (!watch.continuous && runtime_watch_due(watch, now_us)) {
-                    send_formatted_value(*slot.connection, watch.id);
-                }
+                if (!watch.continuous && runtime_watch_due(watch, now_us)) send_formatted_value(slot, watch.id);
             }
         }
     }
@@ -293,6 +358,10 @@ private:
     pypilot_event_loop::TcpTimeoutOptions tcp_timeouts_{};
     pypilot_event_loop::TcpWatermarkOptions tcp_watermarks_{};
     size_t max_output_bytes_ = 0;
+    bool udp_watch_enabled_ = false;
+#if defined(__linux__) || (defined(ARDUINO) && defined(PYPILOT_EVENT_LOOP_ENABLE_ARDUINO_WIFI_UDP))
+    pypilot_event_loop::NativeUdpDatagramStream udp_watch_stream_;
+#endif
     ConnectionSlot slots_[MaxConnections]{};
 };
 
