@@ -35,9 +35,26 @@ int main() {
     pypilot_runtime::PypilotRuntimeState state{autopilot, boatimu, sensors, servo, pilots, gps, wind};
     pypilot_runtime::PypilotRuntimeProtocol protocol(state);
     pypilot_runtime::PypilotRuntimeServer<2, 8> server(runtime_loop, protocol);
+
+    pypilot_event_loop::TcpTimeoutOptions server_timeouts;
+    server_timeouts.read_timeout_ms = 1000;
+    server_timeouts.write_timeout_ms = 1000;
+    server.set_tcp_timeouts(server_timeouts);
+
+    pypilot_event_loop::TcpWatermarkOptions server_watermarks;
+    server_watermarks.read_low = 1;
+    server.set_tcp_watermarks(server_watermarks);
+    server.set_max_output_bytes(4096);
+
     assert(server.listen("127.0.0.1", 0));
 
     pypilot_runtime::PypilotRuntimeClient<> client(runtime_loop);
+    pypilot_event_loop::TcpTimeoutOptions client_timeouts;
+    client_timeouts.read_timeout_ms = 1000;
+    client_timeouts.write_timeout_ms = 1000;
+    client.set_tcp_timeouts(client_timeouts);
+    client.set_max_output_bytes(4096);
+
     assert(client.open("127.0.0.1", server.port()));
     pump_for(runtime_loop, 25);
     assert(client.connected());
