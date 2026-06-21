@@ -6,6 +6,7 @@ set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_EXTENSIONS OFF)
 
 set(PYPILOT_EVENT_LOOP_DIR "${CMAKE_CURRENT_SOURCE_DIR}/../pypilot-event-loop" CACHE PATH "Path to pypilot-event-loop checkout")
+set(PYPILOT_SETTINGS_DIR "${CMAKE_CURRENT_SOURCE_DIR}/../pypilot-settings" CACHE PATH "Path to pypilot-settings checkout")
 
 if(EXISTS "${PYPILOT_EVENT_LOOP_DIR}/CMakeLists.txt")
     add_subdirectory("${PYPILOT_EVENT_LOOP_DIR}" "${CMAKE_CURRENT_BINARY_DIR}/pypilot-event-loop")
@@ -13,11 +14,21 @@ else()
     message(FATAL_ERROR "pypilot-event-loop checkout not found at ${PYPILOT_EVENT_LOOP_DIR}")
 endif()
 
+if(EXISTS "${PYPILOT_SETTINGS_DIR}/CMakeLists.txt")
+    add_subdirectory("${PYPILOT_SETTINGS_DIR}" "${CMAKE_CURRENT_BINARY_DIR}/pypilot-settings")
+    set(PYPILOT_RUNTIME_WITH_SETTINGS ON)
+else()
+    set(PYPILOT_RUNTIME_WITH_SETTINGS OFF)
+endif()
+
 add_library(pypilot_runtime INTERFACE)
 target_include_directories(pypilot_runtime INTERFACE
     ${CMAKE_CURRENT_SOURCE_DIR}/src
 )
 target_link_libraries(pypilot_runtime INTERFACE pypilot_event_loop)
+if(PYPILOT_RUNTIME_WITH_SETTINGS)
+    target_link_libraries(pypilot_runtime INTERFACE pypilot_settings)
+endif()
 
 include(CTest)
 enable_testing()
@@ -39,6 +50,9 @@ add_runtime_test(test_runtime_periodic_disconnect tests/test_runtime_periodic_di
 add_runtime_test(test_runtime_error_paths tests/test_runtime_error_paths.cpp)
 add_runtime_test(test_runtime_expanded_values tests/test_runtime_expanded_values.cpp)
 add_runtime_test(test_runtime_client_helper_compile tests/test_runtime_client_helper_compile.cpp)
+if(PYPILOT_RUNTIME_WITH_SETTINGS)
+    add_runtime_test(test_runtime_settings_bridge tests/test_runtime_settings_bridge.cpp)
+endif()
 
 add_executable(runtime_server_example examples/RuntimeServerExample/RuntimeServerExample.cpp)
 target_link_libraries(runtime_server_example PRIVATE pypilot_runtime)
