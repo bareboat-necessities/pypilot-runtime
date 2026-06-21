@@ -19,11 +19,17 @@ jobs:
           repository: bareboat-necessities/pypilot-event-loop
           path: pypilot-event-loop
 
+      - name: Checkout settings
+        uses: actions/checkout@v4
+        with:
+          repository: bareboat-necessities/pypilot-settings
+          path: pypilot-settings
+
       - name: Install dependencies
         run: sudo apt-get update && sudo apt-get install -y cmake g++ pkg-config libevent-dev libgpiod-dev
 
       - name: Configure
-        run: cmake -S pypilot-runtime -B build -DPYPILOT_EVENT_LOOP_DIR=$GITHUB_WORKSPACE/pypilot-event-loop
+        run: cmake -S pypilot-runtime -B build -DPYPILOT_EVENT_LOOP_DIR=$GITHUB_WORKSPACE/pypilot-event-loop -DPYPILOT_SETTINGS_DIR=$GITHUB_WORKSPACE/pypilot-settings
 
       - name: Build
         run: cmake --build build --parallel
@@ -44,6 +50,12 @@ jobs:
         with:
           repository: bareboat-necessities/pypilot-event-loop
           path: Arduino/libraries/pypilot-event-loop
+
+      - name: Checkout settings
+        uses: actions/checkout@v4
+        with:
+          repository: bareboat-necessities/pypilot-settings
+          path: Arduino/libraries/pypilot-settings
 
       - name: Setup Arduino CLI
         uses: arduino/setup-arduino-cli@v2
