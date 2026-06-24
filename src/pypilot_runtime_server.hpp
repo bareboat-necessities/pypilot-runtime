@@ -82,25 +82,7 @@ public:
     }
 
     void publish_changed_values() {
-        const uint64_t now_us = now();
-        const PypilotValueId ids[] = {
-            PypilotValueId::ApEnabled, PypilotValueId::ApMode, PypilotValueId::ApPilot,
-            PypilotValueId::ApHeadingCommand, PypilotValueId::ApHeading, PypilotValueId::ApHeadingError,
-            PypilotValueId::ImuHeading, PypilotValueId::ImuRoll, PypilotValueId::ImuPitch,
-            PypilotValueId::ImuHeadingLowpass, PypilotValueId::ImuAlignmentCounter, PypilotValueId::ImuUptime,
-            PypilotValueId::ServoCommand, PypilotValueId::ServoEngaged, PypilotValueId::ServoState,
-            PypilotValueId::ServoFlags, PypilotValueId::ServoVoltage, PypilotValueId::ServoCurrent,
-            PypilotValueId::ServoController, PypilotValueId::ServoAmpHours,
-            PypilotValueId::GpsSpeed, PypilotValueId::GpsTrack, PypilotValueId::GpsSource,
-            PypilotValueId::WindDirection, PypilotValueId::WindSpeed, PypilotValueId::WindSource
-        };
-        for (size_t i = 0; i < sizeof(ids) / sizeof(ids[0]); ++i) {
-            if (protocol_.changed(ids[i])) {
-                mark_or_publish_changed(ids[i], now_us);
-                protocol_.clear_changed(ids[i]);
-            }
-        }
-        flush_due_periodic(now_us);
+        flush_due_periodic(now());
     }
 
     void on_accept(pypilot_event_loop::ITcpConnection& connection, const pypilot_event_loop::TcpPeerInfo& peer) override {
@@ -268,25 +250,27 @@ private:
         publish_changed_values();
     }
 
-    RuntimeWatchPeriod* find_watch(ConnectionSlot& slot, PypilotValueId id) {
-        for (size_t i = 0; i < slot.watch_count; ++i) if (slot.watches[i].id == id) return &slot.watches[i];
+    RuntimeWatchPeriod* find_watch(ConnectionSlot& slot, const char* name) {
+        for (size_t i = 0; i < slot.watch_count; ++i) {
+            if (strcmp(slot.watches[i].name, name) == 0) return &slot.watches[i];
+        }
         return nullptr;
     }
 
-    bool add_watch(ConnectionSlot& slot, PypilotValueId id, double period_seconds) {
-        if (id == PypilotValueId::Unknown) return false;
-        RuntimeWatchPeriod* watch = find_watch(slot, id);
+    bool add_watch(ConnectionSlot& slot, const char* name, double period_seconds) {
+        if (!name || !protocol_.value_exists(name)) return false;
+        RuntimeWatchPeriod* watch = find_watch(slot, name);
         if (!watch) {
             if (slot.watch_count >= MaxWatchesPerConnection) return false;
             watch = &slot.watches[slot.watch_count++];
         }
-        *watch = make_runtime_watch_period(id, period_seconds, now());
+        *watch = make_runtime_watch_period(name, period_seconds, now());
         return true;
     }
 
-    void remove_watch(ConnectionSlot& slot, PypilotValueId id) {
+    void remove_watch(ConnectionSlot& slot, const char* name) {
         for (size_t i = 0; i < slot.watch_count; ++i) {
-            if (slot.watches[i].id == id) {
+            if (strcmp(slot.watches[i].name, name) == 0) {
                 for (size_t j = i + 1; j < slot.watch_count; ++j) slot.watches[j - 1] = slot.watches[j];
                 --slot.watch_count;
                 return;
@@ -308,37 +292,24 @@ private:
             const char* colon = strchr(p, ':');
             if (!colon) break;
             ++colon;
-            const PypilotValueId id = parse_value_name(name);
-            if (id == PypilotValueId::Unknown) {
+            if (!protocol_.value_exists(name)) {
                 char error[128]{};
                 snprintf(error, sizeof(error), "error=unknown watch %s\n", name);
                 send_line(connection, error);
             } else if (strncmp(colon, "false", 5) == 0) {
-                remove_watch(*slot, id);
+                remove_watch(*slot, name);
             } else {
                 double period = 0.0;
                 parse_number_text(colon, period);
-                if (add_watch(*slot, id, period)) send_formatted_value(*slot, id);
+                if (add_watch(*slot, name, period)) send_formatted_value(*slot, name);
             }
             p = colon;
         }
     }
 
-    void send_formatted_value(ConnectionSlot& slot, PypilotValueId id) {
+    void send_formatted_value(ConnectionSlot& slot, const char* name) {
         char out[160]{};
-        if (protocol_.format_value(id, out, sizeof(out))) send_watch_line(slot, out);
-    }
-
-    void mark_or_publish_changed(PypilotValueId id, uint64_t now_us) {
-        for (size_t i = 0; i < MaxConnections; ++i) {
-            ConnectionSlot& slot = slots_[i];
-            if (!slot.connection || !slot.connection->valid()) continue;
-            for (size_t j = 0; j < slot.watch_count; ++j) {
-                RuntimeWatchPeriod& watch = slot.watches[j];
-                if (watch.id != id) continue;
-                if (mark_runtime_watch_pending(watch, now_us)) send_formatted_value(slot, id);
-            }
-        }
+        if (protocol_.format_value(name, out, sizeof(out))) send_watch_line(slot, out);
     }
 
     void flush_due_periodic(uint64_t now_us) {
@@ -347,7 +318,7 @@ private:
             if (!slot.connection || !slot.connection->valid()) continue;
             for (size_t j = 0; j < slot.watch_count; ++j) {
                 RuntimeWatchPeriod& watch = slot.watches[j];
-                if (!watch.continuous && runtime_watch_due(watch, now_us)) send_formatted_value(slot, watch.id);
+                if (runtime_watch_due(watch, now_us)) send_formatted_value(slot, watch.name);
             }
         }
     }
@@ -360,9 +331,27 @@ private:
     size_t max_output_bytes_ = 0;
     bool udp_watch_enabled_ = false;
 #if defined(__linux__) || (defined(ARDUINO) && defined(PYPILOT_EVENT_LOOP_ENABLE_ARDUINO_WIFI_UDP))
-    pypilot_event_loop::NativeUdpDatagramStream udp_watch_stream_;
+    pypilot_event_loop::NativeUdpDatagramStream udp_watch_stream_{};
 #endif
     ConnectionSlot slots_[MaxConnections]{};
+};
+
+#else
+
+template<size_t MaxConnections = 8, size_t MaxWatchesPerConnection = 16>
+class PypilotRuntimeServer final {
+public:
+    explicit PypilotRuntimeServer(PypilotRuntimeProtocol&) {}
+    template<typename EventLoopType>
+    PypilotRuntimeServer(EventLoopType&, PypilotRuntimeProtocol&) {}
+    bool configure(const PypilotRuntimeServerOptions&) { return false; }
+    bool listen(const char*, uint16_t) { return false; }
+    bool listen(uint16_t) { return false; }
+    bool valid() const { return false; }
+    uint16_t port() const { return 0; }
+    size_t connection_count() const { return 0; }
+    void close() {}
+    void publish_changed_values() {}
 };
 
 #endif
