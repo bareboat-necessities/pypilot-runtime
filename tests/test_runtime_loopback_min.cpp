@@ -24,15 +24,7 @@ static bool drain_until(pypilot_runtime::PypilotRuntimeClient<>& client, const c
 int main() {
     pypilot_event_loop::EventLoop<64, 128> runtime_loop;
 
-    pypilot_runtime::AutopilotValues autopilot;
-    pypilot_runtime::BoatImuValues boatimu;
-    pypilot_runtime::ServoValues servo;
-    pypilot_runtime::SensorValues sensors;
-    pypilot_runtime::PilotValues pilots;
-    pypilot_runtime::GpsValues gps;
-    pypilot_runtime::WindValues wind;
-
-    pypilot_runtime::PypilotRuntimeState state{autopilot, boatimu, sensors, servo, pilots, gps, wind};
+    pypilot_runtime::PypilotRuntimeState state;
     pypilot_runtime::PypilotRuntimeProtocol protocol(state);
     pypilot_runtime::PypilotRuntimeServer<2, 8> server(runtime_loop, protocol);
 
@@ -61,24 +53,25 @@ int main() {
 
     assert(client.set_bool("ap.enabled", true));
     pump_for(runtime_loop, 25);
-    assert(autopilot.enabled.get());
+    assert(state.ap.enabled.value);
 
     assert(client.set_number("servo.command", -0.15));
     pump_for(runtime_loop, 25);
-    assert(servo.command.get() < -0.149 && servo.command.get() > -0.151);
+    assert(state.servo.command_norm.valid);
+    assert(state.servo.command_norm.value < -0.149f && state.servo.command_norm.value > -0.151f);
 
     assert(client.watch("imu.heading", 0.0));
     pump_for(runtime_loop, 25);
     assert(drain_until(client, "imu.heading=0.0000"));
 
-    boatimu.heading.set(42.0);
+    state.imu.heading_deg.set(42.0f, 100);
     server.publish_changed_values();
     pump_for(runtime_loop, 25);
     assert(drain_until(client, "imu.heading=42.0000"));
 
     assert(client.unwatch("imu.heading"));
     pump_for(runtime_loop, 25);
-    boatimu.heading.set(43.0);
+    state.imu.heading_deg.set(43.0f, 100);
     server.publish_changed_values();
     pump_for(runtime_loop, 25);
     assert(!drain_until(client, "imu.heading=43.0000"));
