@@ -87,14 +87,8 @@ private:
     static bool load_bool(pypilot_settings::SettingsManager& settings, const char* name, bool& out) {
         char value[32]{};
         if (!settings.load_value(name, value, sizeof(value))) return false;
-        if (strcmp(value, "true") == 0 || strcmp(value, "1") == 0) {
-            out = true;
-            return true;
-        }
-        if (strcmp(value, "false") == 0 || strcmp(value, "0") == 0) {
-            out = false;
-            return true;
-        }
+        if (strcmp(value, "true") == 0 || strcmp(value, "1") == 0) { out = true; return true; }
+        if (strcmp(value, "false") == 0 || strcmp(value, "0") == 0) { out = false; return true; }
         return false;
     }
 
@@ -146,14 +140,15 @@ class PypilotRuntimeService final {
 public:
     explicit PypilotRuntimeService(EventLoopType& loop)
         : loop_(loop),
-          autopilot_values_(),
-          boatimu_values_(),
-          sensor_values_(),
-          servo_values_(),
-          pilot_values_(),
-          gps_values_(),
-          wind_values_(),
-          state_{autopilot_values_, boatimu_values_, sensor_values_, servo_values_, pilot_values_, gps_values_, wind_values_},
+          owned_state_(),
+          state_(owned_state_),
+          protocol_(state_),
+          server_(loop_, protocol_) {}
+
+    PypilotRuntimeService(EventLoopType& loop, PypilotRuntimeState& state)
+        : loop_(loop),
+          owned_state_(),
+          state_(state),
           protocol_(state_),
           server_(loop_, protocol_) {}
 
@@ -194,9 +189,9 @@ public:
         listening_ = false;
         listen_port_ = 0;
 
-        state_.sensors.server_version.set(options_.server_version ? options_.server_version : "pypilot-cpp");
-        state_.servo.engaged.set(false);
-        state_.servo.state.set("runtime_ready");
+        copy_cstr(state_.server.version, sizeof(state_.server.version), options_.server_version ? options_.server_version : "pypilot-cpp");
+        if (state_.server.profile_name[0] == '\0') copy_cstr(state_.server.profile_name, sizeof(state_.server.profile_name), "default");
+        state_.servo.engaged.value = false;
 
         if (options_.enable_tcp && !start_server()) {
             return false;
@@ -238,8 +233,11 @@ public:
     const char* fault() const { return fault_; }
 
     void publish_changed_values() {
-        state_.sensors.runtime_published_value_count.set(
-            state_.sensors.runtime_published_value_count.get() + 1.0);
+        const uint64_t now_us = loop_.clock().micros();
+        const uint32_t previous = state_.runtime_publication.published_value_count.valid
+            ? state_.runtime_publication.published_value_count.value
+            : 0u;
+        state_.runtime_publication.published_value_count.set(previous + 1u, now_us);
         server_.publish_changed_values();
     }
 
@@ -263,12 +261,13 @@ private:
 
     void set_fault(const char* message) {
         fault_ = message ? message : "runtime fault";
-        state_.sensors.status_faults.set(state_.sensors.status_faults.get() + 1.0);
-        state_.servo.engaged.set(false);
-        state_.servo.state.set(fault_);
+        ++state_.status.faults.value;
+        state_.servo.engaged.value = false;
     }
 
     EventLoopType& loop_;
+    PypilotRuntimeState owned_state_{};
+    PypilotRuntimeState& state_;
     PypilotRuntimeServiceOptions options_{};
     pypilot_event_loop::EventHandle publish_handle_{};
     const char* fault_ = "";
@@ -279,14 +278,6 @@ private:
     char settings_server_version_[64]{};
 #endif
 
-    AutopilotValues autopilot_values_{};
-    BoatImuValues boatimu_values_{};
-    SensorValues sensor_values_{};
-    ServoValues servo_values_{};
-    PilotValues pilot_values_{};
-    GpsValues gps_values_{};
-    WindValues wind_values_{};
-    PypilotRuntimeState state_;
     PypilotRuntimeProtocol protocol_;
     PypilotRuntimeServer<MaxConnections, MaxWatchesPerConnection> server_;
 };
