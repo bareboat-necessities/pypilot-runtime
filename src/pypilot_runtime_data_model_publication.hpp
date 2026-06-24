@@ -13,6 +13,37 @@ inline bool publish_number_if_valid(const pypilot_data_model::Stamped<Real>& src
 }
 
 template<typename Real>
+inline size_t apply_runtime_commands_to_data_model(const PypilotRuntimeState& state,
+                                                   pypilot_data_model::DataModel<Real>& model,
+                                                   uint64_t now_us) {
+    size_t applied = 0;
+
+    model.ap.enabled.value = state.autopilot.enabled.get(); ++applied;
+
+    pypilot_data_model::AutopilotMode mode{};
+    if (pypilot_data_model::autopilot_mode_from_name(state.autopilot.mode.get(), mode)) {
+        model.ap.mode.value = mode;
+        ++applied;
+    }
+    if (pypilot_data_model::autopilot_mode_from_name(state.autopilot.preferred_mode.get(), mode)) {
+        model.ap.preferred_mode.value = mode;
+        ++applied;
+    }
+
+    pypilot_data_model::PilotName pilot{};
+    if (pypilot_data_model::pilot_from_name(state.autopilot.pilot.get(), pilot)) {
+        model.ap.pilot.value = pilot;
+        ++applied;
+    }
+
+    model.ap.heading_command_deg.set(static_cast<Real>(state.autopilot.heading_command.get()), now_us); ++applied;
+    model.servo.engaged.value = state.servo.engaged.get(); ++applied;
+    model.servo.command_norm.set_external(static_cast<Real>(state.servo.command.get()), now_us); ++applied;
+
+    return applied;
+}
+
+template<typename Real>
 inline size_t publish_data_model_to_runtime(PypilotRuntimeState& state,
                                             const pypilot_data_model::DataModel<Real>& model) {
     size_t published = 0;
