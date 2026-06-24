@@ -1,4 +1,5 @@
 #include <stdlib.h>
+#include <string>
 
 #include <pypilot_runtime.hpp>
 #include <pypilot_settings.hpp>
