@@ -72,220 +72,102 @@ static inline const char* runtime_value_type_name(RuntimeValueType type) {
     return "unknown";
 }
 
-using RuntimeValueFormatter = bool (*)(const PypilotRuntimeState& state, char* out, size_t out_size);
-using RuntimeValueSetter = bool (*)(PypilotRuntimeState& state, const char* payload, char* error, size_t error_size);
+enum class RuntimeFieldKind : uint8_t {
+    SettingBool,
+    SettingAutopilotMode,
+    SettingPilotName,
+    SettingSensorSource,
+    SettingUint32,
+    SettingTackState,
+    SettingTackDirection,
+    StampedFloat,
+    TimedCommandFloat,
+    CString,
+    ServoStateText
+};
 
 struct RuntimeValueDescriptor {
     const char* name;
     RuntimeValueType type;
     bool writable;
-    RuntimeValueFormatter format;
-    RuntimeValueSetter set;
+    RuntimeFieldKind kind;
+    size_t offset;
+    size_t size;
 };
 
-static inline bool format_bool_value(const char* name, bool value, char* out, size_t out_size) {
-    return snprintf(out, out_size, "%s=%s\n", name, value ? "true" : "false") > 0;
+#define PYPILOT_RUNTIME_FIELD_OFFSET(path) \
+    (static_cast<size_t>(reinterpret_cast<const char*>(&reinterpret_cast<const PypilotRuntimeState*>(0)->path) - \
+                         reinterpret_cast<const char*>(reinterpret_cast<const PypilotRuntimeState*>(0))))
+
+#define PYPILOT_RUNTIME_VALUE(NAME, TYPE, WRITABLE, KIND, PATH) \
+    {NAME, RuntimeValueType::TYPE, WRITABLE, RuntimeFieldKind::KIND, PYPILOT_RUNTIME_FIELD_OFFSET(PATH), 0}
+
+#define PYPILOT_RUNTIME_STRING_VALUE(NAME, WRITABLE, KIND, PATH, SIZE) \
+    {NAME, RuntimeValueType::String, WRITABLE, RuntimeFieldKind::KIND, PYPILOT_RUNTIME_FIELD_OFFSET(PATH), SIZE}
+
+template<typename Field>
+static inline Field& runtime_field(PypilotRuntimeState& state, const RuntimeValueDescriptor& descriptor) {
+    return *reinterpret_cast<Field*>(reinterpret_cast<char*>(&state) + descriptor.offset);
 }
 
-static inline bool format_string_value(const char* name, const char* value, char* out, size_t out_size) {
-    return snprintf(out, out_size, "%s=\"%s\"\n", name, value ? value : "") > 0;
+template<typename Field>
+static inline const Field& runtime_field(const PypilotRuntimeState& state, const RuntimeValueDescriptor& descriptor) {
+    return *reinterpret_cast<const Field*>(reinterpret_cast<const char*>(&state) + descriptor.offset);
 }
 
-template<typename T>
-static inline bool format_stamped_value(const char* name,
-                                        const pypilot_data_model::Stamped<T>& stamped,
-                                        char* out,
-                                        size_t out_size) {
-    const double value = stamped.valid ? static_cast<double>(stamped.value) : 0.0;
-    return snprintf(out, out_size, "%s=%.4f\n", name, value) > 0;
-}
-
-template<typename T>
-static inline bool format_command_value(const char* name,
-                                        const pypilot_data_model::TimedCommand<T>& command,
-                                        char* out,
-                                        size_t out_size) {
-    const double value = command.valid ? static_cast<double>(command.value) : 0.0;
-    return snprintf(out, out_size, "%s=%.4f\n", name, value) > 0;
-}
-
-static inline bool set_bool_value(bool& target, const char* payload, char* error, size_t error_size) {
-    bool parsed = false;
-    if (!parse_bool_text(payload, parsed)) {
-        snprintf(error, error_size, "error=bad bool\n");
-        return false;
+static inline bool append_json_value(char* out, size_t out_size, const RuntimeValueDescriptor& descriptor) {
+    char item[160]{};
+    snprintf(item, sizeof(item), "\"%s\":{\"type\":\"%s\",\"writable\":%s}",
+             descriptor.name,
+             runtime_value_type_name(descriptor.type),
+             descriptor.writable ? "true" : "false");
+    if (out[0] != '\0' && out[strlen(out) - 1] != '{') {
+        if (!append_cstr(out, out_size, ",")) return false;
     }
-    target = parsed;
-    return true;
+    return append_cstr(out, out_size, item);
 }
-
-static inline bool set_ap_enabled(PypilotRuntimeState& state, const char* payload, char* error, size_t error_size) {
-    return set_bool_value(state.ap.enabled.value, payload, error, error_size);
-}
-
-static inline bool set_servo_engaged(PypilotRuntimeState& state, const char* payload, char* error, size_t error_size) {
-    return set_bool_value(state.servo.engaged.value, payload, error, error_size);
-}
-
-static inline bool set_ap_mode_value(pypilot_data_model::Setting<pypilot_data_model::AutopilotMode>& target,
-                                     const char* payload,
-                                     char* error,
-                                     size_t error_size) {
-    char text[32]{};
-    pypilot_data_model::AutopilotMode mode{};
-    if (!strip_optional_quotes(payload, text, sizeof(text)) || !pypilot_data_model::autopilot_mode_from_name(text, mode)) {
-        snprintf(error, error_size, "error=bad autopilot mode\n");
-        return false;
-    }
-    target.value = mode;
-    return true;
-}
-
-static inline bool set_ap_mode(PypilotRuntimeState& state, const char* payload, char* error, size_t error_size) {
-    return set_ap_mode_value(state.ap.mode, payload, error, error_size);
-}
-
-static inline bool set_ap_preferred_mode(PypilotRuntimeState& state, const char* payload, char* error, size_t error_size) {
-    return set_ap_mode_value(state.ap.preferred_mode, payload, error, error_size);
-}
-
-static inline bool set_ap_pilot(PypilotRuntimeState& state, const char* payload, char* error, size_t error_size) {
-    char text[32]{};
-    pypilot_data_model::PilotName pilot{};
-    if (!strip_optional_quotes(payload, text, sizeof(text)) || !pypilot_data_model::pilot_from_name(text, pilot)) {
-        snprintf(error, error_size, "error=bad pilot\n");
-        return false;
-    }
-    state.ap.pilot.value = pilot;
-    return true;
-}
-
-static inline bool set_profile_name(PypilotRuntimeState& state, const char* payload, char* error, size_t error_size) {
-    char text[64]{};
-    if (!strip_optional_quotes(payload, text, sizeof(text))) {
-        snprintf(error, error_size, "error=bad profile name\n");
-        return false;
-    }
-    return copy_cstr(state.server.profile_name, sizeof(state.server.profile_name), text);
-}
-
-static inline bool parse_runtime_number(const char* payload, double& value, char* error, size_t error_size) {
-    if (!parse_number_text(payload, value)) {
-        snprintf(error, error_size, "error=bad number\n");
-        return false;
-    }
-    return true;
-}
-
-static inline bool set_ap_heading_command(PypilotRuntimeState& state, const char* payload, char* error, size_t error_size) {
-    double value = 0.0;
-    if (!parse_runtime_number(payload, value, error, error_size)) return false;
-    state.ap.heading_command_deg.set(static_cast<float>(value), 0);
-    return true;
-}
-
-static inline bool set_servo_command(PypilotRuntimeState& state, const char* payload, char* error, size_t error_size) {
-    double value = 0.0;
-    if (!parse_runtime_number(payload, value, error, error_size)) return false;
-    state.servo.command_norm.set_external(static_cast<float>(value), 0);
-    return true;
-}
-
-static inline bool set_tack_state(PypilotRuntimeState& state, const char* payload, char* error, size_t error_size) {
-    double value = 0.0;
-    if (!parse_runtime_number(payload, value, error, error_size)) return false;
-    state.tack.state.value = static_cast<pypilot_data_model::TackState>(static_cast<int>(value));
-    return true;
-}
-
-static inline bool set_tack_direction(PypilotRuntimeState& state, const char* payload, char* error, size_t error_size) {
-    double value = 0.0;
-    if (!parse_runtime_number(payload, value, error, error_size)) return false;
-    state.tack.direction.value = static_cast<pypilot_data_model::TackDirection>(static_cast<int>(value));
-    return true;
-}
-
-static inline bool format_ap_enabled(const PypilotRuntimeState& state, char* out, size_t out_size) { return format_bool_value("ap.enabled", state.ap.enabled.value, out, out_size); }
-static inline bool format_ap_mode(const PypilotRuntimeState& state, char* out, size_t out_size) { return format_string_value("ap.mode", pypilot_data_model::autopilot_mode_name(state.ap.mode.value), out, out_size); }
-static inline bool format_ap_preferred_mode(const PypilotRuntimeState& state, char* out, size_t out_size) { return format_string_value("ap.preferred_mode", pypilot_data_model::autopilot_mode_name(state.ap.preferred_mode.value), out, out_size); }
-static inline bool format_ap_pilot(const PypilotRuntimeState& state, char* out, size_t out_size) { return format_string_value("ap.pilot", pypilot_data_model::pilot_name(state.ap.pilot.value), out, out_size); }
-static inline bool format_ap_heading_command(const PypilotRuntimeState& state, char* out, size_t out_size) { return format_stamped_value("ap.heading_command", state.ap.heading_command_deg, out, out_size); }
-static inline bool format_ap_heading(const PypilotRuntimeState& state, char* out, size_t out_size) { return format_stamped_value("ap.heading", state.ap.heading_deg, out, out_size); }
-static inline bool format_ap_heading_error(const PypilotRuntimeState& state, char* out, size_t out_size) { return format_stamped_value("ap.heading_error", state.ap.heading_error_deg, out, out_size); }
-static inline bool format_imu_heading(const PypilotRuntimeState& state, char* out, size_t out_size) { return format_stamped_value("imu.heading", state.imu.heading_deg, out, out_size); }
-static inline bool format_imu_roll(const PypilotRuntimeState& state, char* out, size_t out_size) { return format_stamped_value("imu.roll", state.imu.roll_deg, out, out_size); }
-static inline bool format_imu_pitch(const PypilotRuntimeState& state, char* out, size_t out_size) { return format_stamped_value("imu.pitch", state.imu.pitch_deg, out, out_size); }
-static inline bool format_imu_heel(const PypilotRuntimeState& state, char* out, size_t out_size) { return format_stamped_value("imu.heel", state.imu.heel_deg, out, out_size); }
-static inline bool format_imu_headingrate(const PypilotRuntimeState& state, char* out, size_t out_size) { return format_stamped_value("imu.headingrate", state.imu.heading_rate_deg_s, out, out_size); }
-static inline bool format_imu_heading_lowpass(const PypilotRuntimeState& state, char* out, size_t out_size) { return format_stamped_value("imu.heading_lowpass", state.imu.heading_lowpass_deg, out, out_size); }
-static inline bool format_servo_command(const PypilotRuntimeState& state, char* out, size_t out_size) { return format_command_value("servo.command", state.servo.command_norm, out, out_size); }
-static inline bool format_servo_engaged(const PypilotRuntimeState& state, char* out, size_t out_size) { return format_bool_value("servo.engaged", state.servo.engaged.value, out, out_size); }
-static inline bool format_servo_state(const PypilotRuntimeState& state, char* out, size_t out_size) { return format_string_value("servo.state", state.servo.engaged.value ? "active" : "disabled", out, out_size); }
-static inline bool format_servo_voltage(const PypilotRuntimeState& state, char* out, size_t out_size) { return format_stamped_value("servo.voltage", state.servo.voltage_v, out, out_size); }
-static inline bool format_servo_current(const PypilotRuntimeState& state, char* out, size_t out_size) { return format_stamped_value("servo.current", state.servo.current_a, out, out_size); }
-static inline bool format_servo_position(const PypilotRuntimeState& state, char* out, size_t out_size) { return format_stamped_value("servo.position", state.servo.position_deg, out, out_size); }
-static inline bool format_gps_speed(const PypilotRuntimeState& state, char* out, size_t out_size) { return format_stamped_value("gps.speed", state.navigation.gps.speed_kn, out, out_size); }
-static inline bool format_gps_track(const PypilotRuntimeState& state, char* out, size_t out_size) { return format_stamped_value("gps.track", state.navigation.gps.track_deg, out, out_size); }
-static inline bool format_gps_timestamp(const PypilotRuntimeState& state, char* out, size_t out_size) { return format_stamped_value("gps.timestamp", state.navigation.gps.timestamp_s, out, out_size); }
-static inline bool format_gps_source(const PypilotRuntimeState& state, char* out, size_t out_size) { return format_string_value("gps.source", pypilot_data_model::sensor_source_name(state.navigation.gps.source.value), out, out_size); }
-static inline bool format_wind_direction(const PypilotRuntimeState& state, char* out, size_t out_size) { return format_stamped_value("wind.direction", state.wind.apparent.direction_deg, out, out_size); }
-static inline bool format_wind_speed(const PypilotRuntimeState& state, char* out, size_t out_size) { return format_stamped_value("wind.speed", state.wind.apparent.speed_kn, out, out_size); }
-static inline bool format_wind_source(const PypilotRuntimeState& state, char* out, size_t out_size) { return format_string_value("wind.source", pypilot_data_model::sensor_source_name(state.wind.apparent.source.value), out, out_size); }
-static inline bool format_truewind_direction(const PypilotRuntimeState& state, char* out, size_t out_size) { return format_stamped_value("truewind.direction", state.wind.truewind.direction_deg, out, out_size); }
-static inline bool format_truewind_speed(const PypilotRuntimeState& state, char* out, size_t out_size) { return format_stamped_value("truewind.speed", state.wind.truewind.speed_kn, out, out_size); }
-static inline bool format_truewind_source(const PypilotRuntimeState& state, char* out, size_t out_size) { return format_string_value("truewind.source", pypilot_data_model::sensor_source_name(state.wind.truewind.source.value), out, out_size); }
-static inline bool format_water_speed(const PypilotRuntimeState& state, char* out, size_t out_size) { return format_stamped_value("water.speed", state.water.speed_kn, out, out_size); }
-static inline bool format_rudder_angle(const PypilotRuntimeState& state, char* out, size_t out_size) { return format_stamped_value("rudder.angle", state.rudder.angle_deg, out, out_size); }
-static inline bool format_tack_state(const PypilotRuntimeState& state, char* out, size_t out_size) { return snprintf(out, out_size, "ap.tack.state=%u\n", static_cast<unsigned>(state.tack.state.value)) > 0; }
-static inline bool format_tack_direction(const PypilotRuntimeState& state, char* out, size_t out_size) { return snprintf(out, out_size, "ap.tack.direction=%u\n", static_cast<unsigned>(state.tack.direction.value)) > 0; }
-static inline bool format_profile_name(const PypilotRuntimeState& state, char* out, size_t out_size) { return format_string_value("profile.name", state.server.profile_name, out, out_size); }
-static inline bool format_server_version(const PypilotRuntimeState& state, char* out, size_t out_size) { return format_string_value("server.version", state.server.version, out, out_size); }
-static inline bool format_server_uptime(const PypilotRuntimeState& state, char* out, size_t out_size) { return format_stamped_value("server.uptime", state.server.uptime_s, out, out_size); }
-static inline bool format_status_faults(const PypilotRuntimeState& state, char* out, size_t out_size) { return snprintf(out, out_size, "status.faults=%u\n", state.status.faults.value) > 0; }
-static inline bool format_status_warnings(const PypilotRuntimeState& state, char* out, size_t out_size) { return snprintf(out, out_size, "status.warnings=%u\n", state.status.warnings.value) > 0; }
-static inline bool format_runtime_published_count(const PypilotRuntimeState& state, char* out, size_t out_size) { return format_stamped_value("runtime.published_value_count", state.runtime_publication.published_value_count, out, out_size); }
 
 static inline const RuntimeValueDescriptor* runtime_value_descriptors() {
     static const RuntimeValueDescriptor values[] = {
-        {"ap.enabled", RuntimeValueType::Bool, true, format_ap_enabled, set_ap_enabled},
-        {"ap.mode", RuntimeValueType::String, true, format_ap_mode, set_ap_mode},
-        {"ap.preferred_mode", RuntimeValueType::String, true, format_ap_preferred_mode, set_ap_preferred_mode},
-        {"ap.pilot", RuntimeValueType::String, true, format_ap_pilot, set_ap_pilot},
-        {"ap.heading_command", RuntimeValueType::Number, true, format_ap_heading_command, set_ap_heading_command},
-        {"ap.heading", RuntimeValueType::Number, false, format_ap_heading, nullptr},
-        {"ap.heading_error", RuntimeValueType::Number, false, format_ap_heading_error, nullptr},
-        {"imu.heading", RuntimeValueType::Number, false, format_imu_heading, nullptr},
-        {"imu.roll", RuntimeValueType::Number, false, format_imu_roll, nullptr},
-        {"imu.pitch", RuntimeValueType::Number, false, format_imu_pitch, nullptr},
-        {"imu.heel", RuntimeValueType::Number, false, format_imu_heel, nullptr},
-        {"imu.headingrate", RuntimeValueType::Number, false, format_imu_headingrate, nullptr},
-        {"imu.heading_lowpass", RuntimeValueType::Number, false, format_imu_heading_lowpass, nullptr},
-        {"servo.command", RuntimeValueType::Number, true, format_servo_command, set_servo_command},
-        {"servo.engaged", RuntimeValueType::Bool, true, format_servo_engaged, set_servo_engaged},
-        {"servo.state", RuntimeValueType::String, false, format_servo_state, nullptr},
-        {"servo.voltage", RuntimeValueType::Number, false, format_servo_voltage, nullptr},
-        {"servo.current", RuntimeValueType::Number, false, format_servo_current, nullptr},
-        {"servo.position", RuntimeValueType::Number, false, format_servo_position, nullptr},
-        {"gps.speed", RuntimeValueType::Number, false, format_gps_speed, nullptr},
-        {"gps.track", RuntimeValueType::Number, false, format_gps_track, nullptr},
-        {"gps.timestamp", RuntimeValueType::Number, false, format_gps_timestamp, nullptr},
-        {"gps.source", RuntimeValueType::String, false, format_gps_source, nullptr},
-        {"wind.direction", RuntimeValueType::Number, false, format_wind_direction, nullptr},
-        {"wind.speed", RuntimeValueType::Number, false, format_wind_speed, nullptr},
-        {"wind.source", RuntimeValueType::String, false, format_wind_source, nullptr},
-        {"truewind.direction", RuntimeValueType::Number, false, format_truewind_direction, nullptr},
-        {"truewind.speed", RuntimeValueType::Number, false, format_truewind_speed, nullptr},
-        {"truewind.source", RuntimeValueType::String, false, format_truewind_source, nullptr},
-        {"water.speed", RuntimeValueType::Number, false, format_water_speed, nullptr},
-        {"rudder.angle", RuntimeValueType::Number, false, format_rudder_angle, nullptr},
-        {"ap.tack.state", RuntimeValueType::Number, true, format_tack_state, set_tack_state},
-        {"ap.tack.direction", RuntimeValueType::Number, true, format_tack_direction, set_tack_direction},
-        {"profile.name", RuntimeValueType::String, true, format_profile_name, set_profile_name},
-        {"server.version", RuntimeValueType::String, false, format_server_version, nullptr},
-        {"server.uptime", RuntimeValueType::Number, false, format_server_uptime, nullptr},
-        {"status.faults", RuntimeValueType::Number, false, format_status_faults, nullptr},
-        {"status.warnings", RuntimeValueType::Number, false, format_status_warnings, nullptr},
-        {"runtime.published_value_count", RuntimeValueType::Number, false, format_runtime_published_count, nullptr}
+        PYPILOT_RUNTIME_VALUE("ap.enabled", Bool, true, SettingBool, ap.enabled),
+        PYPILOT_RUNTIME_VALUE("ap.mode", String, true, SettingAutopilotMode, ap.mode),
+        PYPILOT_RUNTIME_VALUE("ap.preferred_mode", String, true, SettingAutopilotMode, ap.preferred_mode),
+        PYPILOT_RUNTIME_VALUE("ap.pilot", String, true, SettingPilotName, ap.pilot),
+        PYPILOT_RUNTIME_VALUE("ap.heading_command", Number, true, StampedFloat, ap.heading_command_deg),
+        PYPILOT_RUNTIME_VALUE("ap.heading", Number, false, StampedFloat, ap.heading_deg),
+        PYPILOT_RUNTIME_VALUE("ap.heading_error", Number, false, StampedFloat, ap.heading_error_deg),
+        PYPILOT_RUNTIME_VALUE("imu.heading", Number, false, StampedFloat, imu.heading_deg),
+        PYPILOT_RUNTIME_VALUE("imu.roll", Number, false, StampedFloat, imu.roll_deg),
+        PYPILOT_RUNTIME_VALUE("imu.pitch", Number, false, StampedFloat, imu.pitch_deg),
+        PYPILOT_RUNTIME_VALUE("imu.heel", Number, false, StampedFloat, imu.heel_deg),
+        PYPILOT_RUNTIME_VALUE("imu.headingrate", Number, false, StampedFloat, imu.heading_rate_deg_s),
+        PYPILOT_RUNTIME_VALUE("imu.heading_lowpass", Number, false, StampedFloat, imu.heading_lowpass_deg),
+        PYPILOT_RUNTIME_VALUE("servo.command", Number, true, TimedCommandFloat, servo.command_norm),
+        PYPILOT_RUNTIME_VALUE("servo.engaged", Bool, true, SettingBool, servo.engaged),
+        PYPILOT_RUNTIME_VALUE("servo.state", String, false, ServoStateText, servo.engaged),
+        PYPILOT_RUNTIME_VALUE("servo.voltage", Number, false, StampedFloat, servo.voltage_v),
+        PYPILOT_RUNTIME_VALUE("servo.current", Number, false, StampedFloat, servo.current_a),
+        PYPILOT_RUNTIME_VALUE("servo.position", Number, false, StampedFloat, servo.position_deg),
+        PYPILOT_RUNTIME_VALUE("gps.speed", Number, false, StampedFloat, navigation.gps.speed_kn),
+        PYPILOT_RUNTIME_VALUE("gps.track", Number, false, StampedFloat, navigation.gps.track_deg),
+        PYPILOT_RUNTIME_VALUE("gps.timestamp", Number, false, StampedFloat, navigation.gps.timestamp_s),
+        PYPILOT_RUNTIME_VALUE("gps.source", String, false, SettingSensorSource, navigation.gps.source),
+        PYPILOT_RUNTIME_VALUE("wind.direction", Number, false, StampedFloat, wind.apparent.direction_deg),
+        PYPILOT_RUNTIME_VALUE("wind.speed", Number, false, StampedFloat, wind.apparent.speed_kn),
+        PYPILOT_RUNTIME_VALUE("wind.source", String, false, SettingSensorSource, wind.apparent.source),
+        PYPILOT_RUNTIME_VALUE("truewind.direction", Number, false, StampedFloat, wind.truewind.direction_deg),
+        PYPILOT_RUNTIME_VALUE("truewind.speed", Number, false, StampedFloat, wind.truewind.speed_kn),
+        PYPILOT_RUNTIME_VALUE("truewind.source", String, false, SettingSensorSource, wind.truewind.source),
+        PYPILOT_RUNTIME_VALUE("water.speed", Number, false, StampedFloat, water.speed_kn),
+        PYPILOT_RUNTIME_VALUE("rudder.angle", Number, false, StampedFloat, rudder.angle_deg),
+        PYPILOT_RUNTIME_VALUE("ap.tack.state", Number, true, SettingTackState, tack.state),
+        PYPILOT_RUNTIME_VALUE("ap.tack.direction", Number, true, SettingTackDirection, tack.direction),
+        PYPILOT_RUNTIME_STRING_VALUE("profile.name", true, CString, server.profile_name, sizeof(PypilotRuntimeState::server.profile_name)),
+        PYPILOT_RUNTIME_STRING_VALUE("server.version", false, CString, server.version, sizeof(PypilotRuntimeState::server.version)),
+        PYPILOT_RUNTIME_VALUE("server.uptime", Number, false, StampedFloat, server.uptime_s),
+        PYPILOT_RUNTIME_VALUE("status.faults", Number, false, SettingUint32, status.faults),
+        PYPILOT_RUNTIME_VALUE("status.warnings", Number, false, SettingUint32, status.warnings),
+        PYPILOT_RUNTIME_VALUE("runtime.published_value_count", Number, false, StampedFloat, runtime_publication.published_value_count)
     };
     return values;
 }
@@ -301,6 +183,145 @@ static inline const RuntimeValueDescriptor* find_runtime_value_descriptor(const 
         if (strcmp(values[i].name, name) == 0) return &values[i];
     }
     return nullptr;
+}
+
+static inline bool format_runtime_value(const PypilotRuntimeState& state,
+                                        const RuntimeValueDescriptor& descriptor,
+                                        char* out,
+                                        size_t out_size) {
+    switch (descriptor.kind) {
+    case RuntimeFieldKind::SettingBool: {
+        const auto& field = runtime_field<pypilot_data_model::Setting<bool>>(state, descriptor);
+        return snprintf(out, out_size, "%s=%s\n", descriptor.name, field.value ? "true" : "false") > 0;
+    }
+    case RuntimeFieldKind::SettingAutopilotMode: {
+        const auto& field = runtime_field<pypilot_data_model::Setting<pypilot_data_model::AutopilotMode>>(state, descriptor);
+        return snprintf(out, out_size, "%s=\"%s\"\n", descriptor.name, pypilot_data_model::autopilot_mode_name(field.value)) > 0;
+    }
+    case RuntimeFieldKind::SettingPilotName: {
+        const auto& field = runtime_field<pypilot_data_model::Setting<pypilot_data_model::PilotName>>(state, descriptor);
+        return snprintf(out, out_size, "%s=\"%s\"\n", descriptor.name, pypilot_data_model::pilot_name(field.value)) > 0;
+    }
+    case RuntimeFieldKind::SettingSensorSource: {
+        const auto& field = runtime_field<pypilot_data_model::Setting<pypilot_data_model::SensorSource>>(state, descriptor);
+        return snprintf(out, out_size, "%s=\"%s\"\n", descriptor.name, pypilot_data_model::sensor_source_name(field.value)) > 0;
+    }
+    case RuntimeFieldKind::SettingUint32: {
+        const auto& field = runtime_field<pypilot_data_model::Setting<uint32_t>>(state, descriptor);
+        return snprintf(out, out_size, "%s=%u\n", descriptor.name, static_cast<unsigned>(field.value)) > 0;
+    }
+    case RuntimeFieldKind::SettingTackState: {
+        const auto& field = runtime_field<pypilot_data_model::Setting<pypilot_data_model::TackState>>(state, descriptor);
+        return snprintf(out, out_size, "%s=%u\n", descriptor.name, static_cast<unsigned>(field.value)) > 0;
+    }
+    case RuntimeFieldKind::SettingTackDirection: {
+        const auto& field = runtime_field<pypilot_data_model::Setting<pypilot_data_model::TackDirection>>(state, descriptor);
+        return snprintf(out, out_size, "%s=%u\n", descriptor.name, static_cast<unsigned>(field.value)) > 0;
+    }
+    case RuntimeFieldKind::StampedFloat: {
+        const auto& field = runtime_field<pypilot_data_model::Stamped<float>>(state, descriptor);
+        const double value = field.valid ? static_cast<double>(field.value) : 0.0;
+        return snprintf(out, out_size, "%s=%.4f\n", descriptor.name, value) > 0;
+    }
+    case RuntimeFieldKind::TimedCommandFloat: {
+        const auto& field = runtime_field<pypilot_data_model::TimedCommand<float>>(state, descriptor);
+        const double value = field.valid ? static_cast<double>(field.value) : 0.0;
+        return snprintf(out, out_size, "%s=%.4f\n", descriptor.name, value) > 0;
+    }
+    case RuntimeFieldKind::CString: {
+        const char* text = reinterpret_cast<const char*>(&state) + descriptor.offset;
+        return snprintf(out, out_size, "%s=\"%s\"\n", descriptor.name, text) > 0;
+    }
+    case RuntimeFieldKind::ServoStateText: {
+        const auto& field = runtime_field<pypilot_data_model::Setting<bool>>(state, descriptor);
+        return snprintf(out, out_size, "%s=\"%s\"\n", descriptor.name, field.value ? "active" : "disabled") > 0;
+    }
+    }
+    return false;
+}
+
+static inline bool set_runtime_value(PypilotRuntimeState& state,
+                                     const RuntimeValueDescriptor& descriptor,
+                                     const char* payload,
+                                     char* error,
+                                     size_t error_size) {
+    switch (descriptor.kind) {
+    case RuntimeFieldKind::SettingBool: {
+        auto& field = runtime_field<pypilot_data_model::Setting<bool>>(state, descriptor);
+        bool parsed = false;
+        if (!parse_bool_text(payload, parsed)) { snprintf(error, error_size, "error=bad bool\n"); return false; }
+        field.value = parsed;
+        return true;
+    }
+    case RuntimeFieldKind::SettingAutopilotMode: {
+        auto& field = runtime_field<pypilot_data_model::Setting<pypilot_data_model::AutopilotMode>>(state, descriptor);
+        char text[32]{};
+        pypilot_data_model::AutopilotMode mode{};
+        if (!strip_optional_quotes(payload, text, sizeof(text)) || !pypilot_data_model::autopilot_mode_from_name(text, mode)) {
+            snprintf(error, error_size, "error=bad autopilot mode\n");
+            return false;
+        }
+        field.value = mode;
+        return true;
+    }
+    case RuntimeFieldKind::SettingPilotName: {
+        auto& field = runtime_field<pypilot_data_model::Setting<pypilot_data_model::PilotName>>(state, descriptor);
+        char text[32]{};
+        pypilot_data_model::PilotName pilot{};
+        if (!strip_optional_quotes(payload, text, sizeof(text)) || !pypilot_data_model::pilot_from_name(text, pilot)) {
+            snprintf(error, error_size, "error=bad pilot\n");
+            return false;
+        }
+        field.value = pilot;
+        return true;
+    }
+    case RuntimeFieldKind::SettingUint32: {
+        auto& field = runtime_field<pypilot_data_model::Setting<uint32_t>>(state, descriptor);
+        double value = 0.0;
+        if (!parse_number_text(payload, value)) { snprintf(error, error_size, "error=bad number\n"); return false; }
+        field.value = static_cast<uint32_t>(value);
+        return true;
+    }
+    case RuntimeFieldKind::SettingTackState: {
+        auto& field = runtime_field<pypilot_data_model::Setting<pypilot_data_model::TackState>>(state, descriptor);
+        double value = 0.0;
+        if (!parse_number_text(payload, value)) { snprintf(error, error_size, "error=bad number\n"); return false; }
+        field.value = static_cast<pypilot_data_model::TackState>(static_cast<int>(value));
+        return true;
+    }
+    case RuntimeFieldKind::SettingTackDirection: {
+        auto& field = runtime_field<pypilot_data_model::Setting<pypilot_data_model::TackDirection>>(state, descriptor);
+        double value = 0.0;
+        if (!parse_number_text(payload, value)) { snprintf(error, error_size, "error=bad number\n"); return false; }
+        field.value = static_cast<pypilot_data_model::TackDirection>(static_cast<int>(value));
+        return true;
+    }
+    case RuntimeFieldKind::StampedFloat: {
+        auto& field = runtime_field<pypilot_data_model::Stamped<float>>(state, descriptor);
+        double value = 0.0;
+        if (!parse_number_text(payload, value)) { snprintf(error, error_size, "error=bad number\n"); return false; }
+        field.set(static_cast<float>(value), 0);
+        return true;
+    }
+    case RuntimeFieldKind::TimedCommandFloat: {
+        auto& field = runtime_field<pypilot_data_model::TimedCommand<float>>(state, descriptor);
+        double value = 0.0;
+        if (!parse_number_text(payload, value)) { snprintf(error, error_size, "error=bad number\n"); return false; }
+        field.set_external(static_cast<float>(value), 0);
+        return true;
+    }
+    case RuntimeFieldKind::CString: {
+        char text[128]{};
+        if (!strip_optional_quotes(payload, text, sizeof(text))) { snprintf(error, error_size, "error=bad string\n"); return false; }
+        char* target = reinterpret_cast<char*>(&state) + descriptor.offset;
+        return copy_cstr(target, descriptor.size, text);
+    }
+    case RuntimeFieldKind::SettingSensorSource:
+    case RuntimeFieldKind::ServoStateText:
+        snprintf(error, error_size, "error=value not writable %s\n", descriptor.name);
+        return false;
+    }
+    return false;
 }
 
 class PypilotRuntimeProtocol final {
@@ -322,17 +343,17 @@ public:
             snprintf(error, error_size, "error=unknown value %s\n", name ? name : "");
             return false;
         }
-        if (!descriptor->writable || !descriptor->set) {
+        if (!descriptor->writable) {
             snprintf(error, error_size, "error=value not writable %s\n", descriptor->name);
             return false;
         }
-        return descriptor->set(state_, payload, error, error_size);
+        return set_runtime_value(state_, *descriptor, payload, error, error_size);
     }
 
     bool format_value(const char* name, char* out, size_t out_size) const {
         const RuntimeValueDescriptor* descriptor = find_runtime_value_descriptor(name);
-        if (!descriptor || !descriptor->format) return false;
-        return descriptor->format(state_, out, out_size);
+        if (!descriptor) return false;
+        return format_runtime_value(state_, *descriptor, out, out_size);
     }
 
     bool write_values_catalog(char* out, size_t out_size) const {
@@ -341,13 +362,7 @@ public:
         if (!append_cstr(out, out_size, "values={")) return false;
         const RuntimeValueDescriptor* values = runtime_value_descriptors();
         for (size_t i = 0; i < runtime_value_descriptor_count(); ++i) {
-            if (!append_json_value(out,
-                                   out_size,
-                                   values[i].name,
-                                   runtime_value_type_name(values[i].type),
-                                   values[i].writable)) {
-                return false;
-            }
+            if (!append_json_value(out, out_size, values[i])) return false;
         }
         return append_cstr(out, out_size, "}\n");
     }
@@ -355,5 +370,9 @@ public:
 private:
     PypilotRuntimeState& state_;
 };
+
+#undef PYPILOT_RUNTIME_VALUE
+#undef PYPILOT_RUNTIME_STRING_VALUE
+#undef PYPILOT_RUNTIME_FIELD_OFFSET
 
 } // namespace pypilot_runtime
