@@ -1,4 +1,5 @@
 #include <stdlib.h>
+#include <cstring>
 #include <string>
 
 #include <pypilot_runtime.hpp>
@@ -18,7 +19,8 @@ bool set_env(const char* name, const char* value) {
 
 int main() {
     pypilot_event_loop::EventLoop<64, 96> loop;
-    pypilot_runtime::PypilotRuntimeService<decltype(loop), 2, 4> runtime(loop);
+    pypilot_runtime::PypilotRuntimeState model;
+    pypilot_runtime::PypilotRuntimeService<decltype(loop), 2, 4> runtime(loop, model);
 
     pypilot_settings::MemorySettingsStore<16, 64, 128> store;
     pypilot_settings::SettingsCatalog catalog = pypilot_runtime::PypilotRuntimeServiceSettings::catalog();
@@ -32,7 +34,7 @@ int main() {
     if (!runtime.begin(settings)) return 4;
     if (runtime.listening()) return 5;
     if (runtime.port() != 0) return 6;
-    if (runtime.state().sensors.server_version.get() != std::string("runtime-settings-test")) return 7;
+    if (std::strcmp(model.server.version, "runtime-settings-test") != 0) return 7;
     runtime.stop();
 
     if (!set_env("PYPILOTD_RUNTIME_PORT", "0")) return 8;
