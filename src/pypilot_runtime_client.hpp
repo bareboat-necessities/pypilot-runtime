@@ -12,7 +12,6 @@ namespace pypilot_runtime {
 struct PypilotClientValue {
     char name[80]{};
     char payload[160]{};
-    PypilotValueId id = PypilotValueId::Unknown;
 };
 
 template<size_t LineSize = 256>
@@ -94,9 +93,7 @@ public:
         if (name_len >= sizeof(value.name)) return false;
         memcpy(value.name, line, name_len);
         value.name[name_len] = '\0';
-        if (!copy_cstr(value.payload, sizeof(value.payload), eq + 1)) return false;
-        value.id = parse_value_name(value.name);
-        return true;
+        return copy_cstr(value.payload, sizeof(value.payload), eq + 1);
     }
 
     bool read_bool(PypilotClientValue& value, bool& out) {
@@ -148,13 +145,7 @@ private:
             return false;
         }
         const int written = connection_->write(reinterpret_cast<const uint8_t*>(line), strlen(line));
-        if (written < 0) return false;
-        if (max_output_bytes_ != 0 && connection_->output_size() > max_output_bytes_) {
-            connection_->close();
-            connection_ = nullptr;
-            return false;
-        }
-        return true;
+        return written > 0;
     }
 
     pypilot_event_loop::NativeTcpClient client_;
