@@ -299,7 +299,7 @@ private:
             if (n <= 0) return;
             const uint64_t now_us = loop_.clock().micros();
             for (int i = 0; i < n; ++i) {
-                pypilot_nmea0183_connector::NmeaSentence sentence;
+                nmea0183_connector::NmeaSentence sentence;
                 if (nmea0183_parser_.push(static_cast<char>(datagram[i]), sentence)) {
                     nmea0183_connector_.apply_sentence(sentence, state_, now_us, pypilot_data_model::SensorSource::serial);
                 }
@@ -320,8 +320,8 @@ private:
     pypilot_event_loop::EventHandle publish_handle_{};
     pypilot_event_loop::EventHandle nmea0183_udp_handle_{};
     pypilot_event_loop::NativeUdpDatagramStream nmea0183_udp_stream_{};
-    pypilot_nmea0183_connector::Nmea0183StreamParser nmea0183_parser_{};
-    pypilot_nmea0183_connector::Nmea0183Connector<float> nmea0183_connector_{};
+    nmea0183_connector::Nmea0183StreamParser nmea0183_parser_{};
+    nmea0183_connector::Nmea0183RxConnector<float> nmea0183_connector_{};
     const char* fault_ = "";
     bool listening_ = false;
     uint16_t listen_port_ = 0;
