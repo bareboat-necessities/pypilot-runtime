@@ -189,8 +189,8 @@ public:
         listening_ = false;
         listen_port_ = 0;
 
-        copy_cstr(state_.server.version, sizeof(state_.server.version), options_.server_version ? options_.server_version : "pypilot-cpp");
-        if (state_.server.profile_name[0] == '\0') copy_cstr(state_.server.profile_name, sizeof(state_.server.profile_name), "default");
+        pypilot_data_model::copy_data_text(state_.server.version, sizeof(state_.server.version), options_.server_version ? options_.server_version : "pypilot-cpp");
+        if (state_.server.profile_name[0] == '\0') pypilot_data_model::copy_data_text(state_.server.profile_name, sizeof(state_.server.profile_name), "default");
         state_.servo.engaged.value = false;
 
         if (options_.enable_tcp && !start_server()) {
