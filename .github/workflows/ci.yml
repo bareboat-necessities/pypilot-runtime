@@ -31,11 +31,17 @@ jobs:
           repository: bareboat-necessities/pypilot-mdns
           path: pypilot-mdns
 
+      - name: Checkout data model
+        uses: actions/checkout@v4
+        with:
+          repository: bareboat-necessities/pypilot-data-model
+          path: pypilot-data-model
+
       - name: Install dependencies
         run: sudo apt-get update && sudo apt-get install -y cmake g++ pkg-config libevent-dev libgpiod-dev libavahi-client-dev
 
       - name: Configure
-        run: cmake -S pypilot-runtime -B build -DPYPILOT_EVENT_LOOP_DIR=$GITHUB_WORKSPACE/pypilot-event-loop -DPYPILOT_SETTINGS_DIR=$GITHUB_WORKSPACE/pypilot-settings -DPYPILOT_MDNS_DIR=$GITHUB_WORKSPACE/pypilot-mdns
+        run: cmake -S pypilot-runtime -B build -DPYPILOT_EVENT_LOOP_DIR=$GITHUB_WORKSPACE/pypilot-event-loop -DPYPILOT_SETTINGS_DIR=$GITHUB_WORKSPACE/pypilot-settings -DPYPILOT_MDNS_DIR=$GITHUB_WORKSPACE/pypilot-mdns -DPYPILOT_DATA_MODEL_DIR=$GITHUB_WORKSPACE/pypilot-data-model/src
 
       - name: Build
         run: cmake --build build --parallel
@@ -68,6 +74,12 @@ jobs:
         with:
           repository: bareboat-necessities/pypilot-mdns
           path: Arduino/libraries/pypilot-mdns
+
+      - name: Checkout data model
+        uses: actions/checkout@v4
+        with:
+          repository: bareboat-necessities/pypilot-data-model
+          path: Arduino/libraries/pypilot-data-model
 
       - name: Setup Arduino CLI
         uses: arduino/setup-arduino-cli@v2
