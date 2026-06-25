@@ -48,7 +48,7 @@ static void setup_runtime_example() {
     delay(200);
 #endif
     setup_network();
-    pypilot_runtime::copy_cstr(runtime_state.server.version, sizeof(runtime_state.server.version), "runtime-example");
+    pypilot_data_model::copy_data_text(runtime_state.server.version, sizeof(runtime_state.server.version), "runtime-example");
 
     if (!server.listen(PYPILOT_RUNTIME_EXAMPLE_PORT)) {
         print_line("failed to start pypilot runtime server");
