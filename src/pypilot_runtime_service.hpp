@@ -6,7 +6,7 @@
 #include <string.h>
 
 #include <pypilot_event_loop.hpp>
-#include <pypilot_nmea0183_connector.hpp>
+#include <nmea0183_connector.hpp>
 #include <pypilot_runtime_core.hpp>
 #include <pypilot_runtime_server.hpp>
 #include <pypilot_settings.hpp>
