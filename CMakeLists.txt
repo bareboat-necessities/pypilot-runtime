@@ -30,15 +30,14 @@ else()
     set(PYPILOT_RUNTIME_WITH_MDNS OFF)
 endif()
 
-if(EXISTS "${PYPILOT_DATA_MODEL_DIR}/pypilot_data_model.hpp")
-    set(PYPILOT_RUNTIME_WITH_DATA_MODEL ON)
-else()
-    set(PYPILOT_RUNTIME_WITH_DATA_MODEL OFF)
+if(NOT EXISTS "${PYPILOT_DATA_MODEL_DIR}/pypilot_data_model.hpp")
+    message(FATAL_ERROR "pypilot-data-model checkout not found at ${PYPILOT_DATA_MODEL_DIR}")
 endif()
 
 add_library(pypilot_runtime INTERFACE)
 target_include_directories(pypilot_runtime INTERFACE
     ${CMAKE_CURRENT_SOURCE_DIR}/src
+    ${PYPILOT_DATA_MODEL_DIR}
 )
 target_link_libraries(pypilot_runtime INTERFACE pypilot_event_loop)
 if(PYPILOT_RUNTIME_WITH_SETTINGS)
@@ -49,10 +48,7 @@ if(PYPILOT_RUNTIME_WITH_MDNS)
     target_link_libraries(pypilot_runtime INTERFACE pypilot_mdns)
     target_compile_definitions(pypilot_runtime INTERFACE PYPILOT_RUNTIME_WITH_MDNS=1)
 endif()
-if(PYPILOT_RUNTIME_WITH_DATA_MODEL)
-    target_include_directories(pypilot_runtime INTERFACE ${PYPILOT_DATA_MODEL_DIR})
-    target_compile_definitions(pypilot_runtime INTERFACE PYPILOT_RUNTIME_WITH_DATA_MODEL=1)
-endif()
+target_compile_definitions(pypilot_runtime INTERFACE PYPILOT_RUNTIME_WITH_DATA_MODEL=1)
 
 include(CTest)
 enable_testing()
