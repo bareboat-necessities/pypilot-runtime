@@ -7,6 +7,7 @@ This module intentionally does not use a dynamic value registry. Internal code u
 ## Implemented pieces
 
 - TCP runtime server on port 23322
+- NMEA 0183 UDP broadcast receiver on port 10110 by default
 - hardcoded typed values for autopilot, IMU, servo, GPS, and wind basics
 - `name=value` command parsing
 - continuous and periodic watch support
@@ -53,6 +54,28 @@ PYPILOT_RUNTIME_WITH_MDNS=1
 PYPILOT_RUNTIME_WITH_NMEA0183_CONNECTOR=1
 PYPILOT_RUNTIME_WITH_SIGNALK_CONNECTOR=1
 ```
+
+## NMEA 0183 UDP input
+
+`PypilotRuntimeService` binds a UDP datagram listener on port `10110` by default and processes NMEA 0183 broadcast sentences with `pypilot-nmea0183-connector`. Parsed GPS, heading, wind, water-speed, leeway, rudder, APB, and XTE values are applied directly into the shared `pypilot-data-model` state with `SensorSource::serial`.
+
+Runtime settings:
+
+```text
+runtime.nmea0183.udp.port      default 10110
+runtime.nmea0183.udp.enabled   default true
+```
+
+Environment overrides:
+
+```text
+PYPILOT_RUNTIME_NMEA0183_UDP_PORT
+PYPILOT_NMEA0183_UDP_PORT
+PYPILOT_RUNTIME_NMEA0183_UDP_ENABLED
+PYPILOT_NMEA0183_UDP_ENABLED
+```
+
+Set the port to `0` or set enabled to `false` to disable the listener.
 
 ## Runtime mDNS helper
 
