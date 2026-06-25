@@ -6,12 +6,10 @@
 #include <string.h>
 
 #include <pypilot_event_loop.hpp>
+#include <pypilot_nmea0183_connector.hpp>
 #include <pypilot_runtime_core.hpp>
 #include <pypilot_runtime_server.hpp>
-
-#if defined(PYPILOT_RUNTIME_WITH_SETTINGS)
 #include <pypilot_settings.hpp>
-#endif
 
 namespace pypilot_runtime {
 
@@ -19,14 +17,15 @@ struct PypilotRuntimeServiceOptions {
     const char* host = "0.0.0.0";
     uint16_t tcp_port = 23322;
     uint16_t udp_watch_port = 0;
+    uint16_t nmea0183_udp_port = 10110;
     uint32_t publish_period_us = 50000u;
     size_t max_output_bytes = 32768u;
     const char* server_version = "pypilot-cpp";
     bool enable_tcp = true;
     bool enable_periodic_publish = true;
+    bool enable_nmea0183_udp = true;
 };
 
-#if defined(PYPILOT_RUNTIME_WITH_SETTINGS)
 class PypilotRuntimeServiceSettings final {
 public:
     static pypilot_settings::SettingsCatalog catalog() {
@@ -40,6 +39,10 @@ public:
         ok = save_env_if_set(settings, "PYPILOTD_RUNTIME_PORT", "runtime.tcp.port") && ok;
         ok = save_env_if_set(settings, "PYPILOT_RUNTIME_PORT", "runtime.tcp.port") && ok;
         ok = save_env_if_set(settings, "PYPILOT_RUNTIME_UDP_WATCH_PORT", "runtime.udp.watch.port") && ok;
+        ok = save_env_if_set(settings, "PYPILOT_RUNTIME_NMEA0183_UDP_PORT", "runtime.nmea0183.udp.port") && ok;
+        ok = save_env_if_set(settings, "PYPILOT_NMEA0183_UDP_PORT", "runtime.nmea0183.udp.port") && ok;
+        ok = save_env_if_set(settings, "PYPILOT_RUNTIME_NMEA0183_UDP_ENABLED", "runtime.nmea0183.udp.enabled") && ok;
+        ok = save_env_if_set(settings, "PYPILOT_NMEA0183_UDP_ENABLED", "runtime.nmea0183.udp.enabled") && ok;
         ok = save_env_if_set(settings, "PYPILOT_RUNTIME_PUBLISH_PERIOD_US", "runtime.publish.period.us") && ok;
         ok = save_env_if_set(settings, "PYPILOT_RUNTIME_MAX_OUTPUT_BYTES", "runtime.max.output.bytes") && ok;
         ok = save_env_if_set(settings, "PYPILOT_RUNTIME_TCP_ENABLED", "runtime.tcp.enabled") && ok;
@@ -58,6 +61,8 @@ public:
         ok = load_string(settings, "runtime.tcp.host", host_storage, host_storage_size) && ok;
         ok = load_u16(settings, "runtime.tcp.port", options.tcp_port) && ok;
         ok = load_u16(settings, "runtime.udp.watch.port", options.udp_watch_port) && ok;
+        ok = load_u16(settings, "runtime.nmea0183.udp.port", options.nmea0183_udp_port) && ok;
+        ok = load_bool(settings, "runtime.nmea0183.udp.enabled", options.enable_nmea0183_udp) && ok;
         ok = load_u32(settings, "runtime.publish.period.us", options.publish_period_us) && ok;
         ok = load_size(settings, "runtime.max.output.bytes", options.max_output_bytes) && ok;
         ok = load_bool(settings, "runtime.tcp.enabled", options.enable_tcp) && ok;
@@ -122,6 +127,8 @@ private:
             {"runtime.tcp.host", pypilot_settings::SettingType::String, pypilot_settings::SettingScope::Runtime, true, true, "0.0.0.0", 0.0, 0.0, 63, nullptr, 0},
             {"runtime.tcp.port", pypilot_settings::SettingType::Number, pypilot_settings::SettingScope::Runtime, true, true, "23322", 0.0, 65535.0, 0, nullptr, 0},
             {"runtime.udp.watch.port", pypilot_settings::SettingType::Number, pypilot_settings::SettingScope::Runtime, true, true, "0", 0.0, 65535.0, 0, nullptr, 0},
+            {"runtime.nmea0183.udp.port", pypilot_settings::SettingType::Number, pypilot_settings::SettingScope::Runtime, true, true, "10110", 0.0, 65535.0, 0, nullptr, 0},
+            {"runtime.nmea0183.udp.enabled", pypilot_settings::SettingType::Bool, pypilot_settings::SettingScope::Runtime, true, true, "true", 0.0, 0.0, 0, nullptr, 0},
             {"runtime.publish.period.us", pypilot_settings::SettingType::Number, pypilot_settings::SettingScope::Runtime, true, true, "50000", 0.0, 60000000.0, 0, nullptr, 0},
             {"runtime.max.output.bytes", pypilot_settings::SettingType::Number, pypilot_settings::SettingScope::Runtime, true, true, "32768", 1024.0, 1048576.0, 0, nullptr, 0},
             {"runtime.tcp.enabled", pypilot_settings::SettingType::Bool, pypilot_settings::SettingScope::Runtime, true, true, "true", 0.0, 0.0, 0, nullptr, 0},
@@ -131,9 +138,8 @@ private:
         return values;
     }
 
-    static size_t descriptor_count() { return 8; }
+    static size_t descriptor_count() { return 10; }
 };
-#endif
 
 template<typename EventLoopType, size_t MaxConnections = 8, size_t MaxWatchesPerConnection = 16>
 class PypilotRuntimeService final {
@@ -153,7 +159,6 @@ public:
           server_(loop_, protocol_) {}
 
     bool begin() {
-#if defined(PYPILOT_RUNTIME_WITH_SETTINGS)
         pypilot_settings::MemorySettingsStore<16, 64, 128> store;
         pypilot_settings::SettingsCatalog service_catalog = PypilotRuntimeServiceSettings::catalog();
         pypilot_settings::SettingsManager settings(service_catalog, store);
@@ -162,12 +167,8 @@ public:
             return false;
         }
         return begin(settings);
-#else
-        return begin(PypilotRuntimeServiceOptions{});
-#endif
     }
 
-#if defined(PYPILOT_RUNTIME_WITH_SETTINGS)
     bool begin(pypilot_settings::SettingsManager& settings) {
         PypilotRuntimeServiceOptions options;
         if (!PypilotRuntimeServiceSettings::load(settings,
@@ -181,19 +182,24 @@ public:
         }
         return begin(options);
     }
-#endif
 
     bool begin(const PypilotRuntimeServiceOptions& options) {
         options_ = options;
         fault_ = "";
         listening_ = false;
         listen_port_ = 0;
+        nmea0183_udp_listening_ = false;
+        nmea0183_udp_port_ = 0;
 
         pypilot_data_model::copy_data_text(state_.server.version, sizeof(state_.server.version), options_.server_version ? options_.server_version : "pypilot-cpp");
         if (state_.server.profile_name[0] == '\0') pypilot_data_model::copy_data_text(state_.server.profile_name, sizeof(state_.server.profile_name), "default");
         state_.servo.engaged.value = false;
 
         if (options_.enable_tcp && !start_server()) {
+            return false;
+        }
+
+        if (options_.enable_nmea0183_udp && options_.nmea0183_udp_port != 0 && !start_nmea0183_udp()) {
             return false;
         }
 
@@ -215,8 +221,15 @@ public:
             loop_.remove(publish_handle_);
             publish_handle_ = pypilot_event_loop::EventHandle{};
         }
+        if (nmea0183_udp_handle_.assigned()) {
+            loop_.remove(nmea0183_udp_handle_);
+            nmea0183_udp_handle_ = pypilot_event_loop::EventHandle{};
+        }
+        nmea0183_udp_stream_.close();
         listening_ = false;
         listen_port_ = 0;
+        nmea0183_udp_listening_ = false;
+        nmea0183_udp_port_ = 0;
     }
 
     PypilotRuntimeState& state() { return state_; }
@@ -230,6 +243,8 @@ public:
 
     bool listening() const { return listening_; }
     uint16_t port() const { return listen_port_; }
+    bool nmea0183_udp_listening() const { return nmea0183_udp_listening_; }
+    uint16_t nmea0183_udp_port() const { return nmea0183_udp_port_; }
     const char* fault() const { return fault_; }
 
     void publish_changed_values() {
@@ -259,6 +274,39 @@ private:
         return true;
     }
 
+    bool start_nmea0183_udp() {
+        nmea0183_parser_.reset();
+        if (!nmea0183_udp_stream_.bind(options_.nmea0183_udp_port)) {
+            set_fault("failed to bind NMEA 0183 UDP port");
+            return false;
+        }
+        nmea0183_udp_handle_ = loop_.on_bytes_ready(nmea0183_udp_stream_, [this]() { read_nmea0183_udp(); });
+        if (!nmea0183_udp_handle_.assigned()) {
+            nmea0183_udp_stream_.close();
+            set_fault("failed to register NMEA 0183 UDP reader");
+            return false;
+        }
+        nmea0183_udp_listening_ = true;
+        nmea0183_udp_port_ = options_.nmea0183_udp_port;
+        return true;
+    }
+
+    void read_nmea0183_udp() {
+        uint8_t datagram[512]{};
+        pypilot_event_loop::UdpEndpoint source{};
+        for (size_t packets = 0; packets < 16; ++packets) {
+            const int n = nmea0183_udp_stream_.recv_from(datagram, sizeof(datagram), &source);
+            if (n <= 0) return;
+            const uint64_t now_us = loop_.clock().micros();
+            for (int i = 0; i < n; ++i) {
+                pypilot_nmea0183_connector::NmeaSentence sentence;
+                if (nmea0183_parser_.push(static_cast<char>(datagram[i]), sentence)) {
+                    nmea0183_connector_.apply_sentence(sentence, state_, now_us, pypilot_data_model::SensorSource::serial);
+                }
+            }
+        }
+    }
+
     void set_fault(const char* message) {
         fault_ = message ? message : "runtime fault";
         ++state_.status.faults.value;
@@ -270,13 +318,17 @@ private:
     PypilotRuntimeState& state_;
     PypilotRuntimeServiceOptions options_{};
     pypilot_event_loop::EventHandle publish_handle_{};
+    pypilot_event_loop::EventHandle nmea0183_udp_handle_{};
+    pypilot_event_loop::NativeUdpDatagramStream nmea0183_udp_stream_{};
+    pypilot_nmea0183_connector::Nmea0183StreamParser nmea0183_parser_{};
+    pypilot_nmea0183_connector::Nmea0183Connector<float> nmea0183_connector_{};
     const char* fault_ = "";
     bool listening_ = false;
     uint16_t listen_port_ = 0;
-#if defined(PYPILOT_RUNTIME_WITH_SETTINGS)
+    bool nmea0183_udp_listening_ = false;
+    uint16_t nmea0183_udp_port_ = 0;
     char settings_host_[64]{};
     char settings_server_version_[64]{};
-#endif
 
     PypilotRuntimeProtocol protocol_;
     PypilotRuntimeServer<MaxConnections, MaxWatchesPerConnection> server_;
