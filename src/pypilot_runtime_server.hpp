@@ -107,6 +107,8 @@ public:
     void on_error(pypilot_event_loop::ITcpConnection& connection, int) override { clear_connection(connection); }
 
 private:
+    static constexpr size_t ValuesCatalogBufferSize = 8192;
+
     struct ConnectionSlot {
         pypilot_event_loop::ITcpConnection* connection = nullptr;
         pypilot_event_loop::TcpPeerInfo peer{};
@@ -224,7 +226,7 @@ private:
             return;
         }
         if (strcmp(line, "values") == 0 || strcmp(line, "values=true") == 0) {
-            char out[2048]{};
+            char out[ValuesCatalogBufferSize]{};
             if (protocol_.write_values_catalog(out, sizeof(out))) send_line(connection, out);
             else send_line(connection, "error=values catalog too large\n");
             return;
