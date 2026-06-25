@@ -37,11 +37,30 @@ jobs:
           repository: bareboat-necessities/pypilot-data-model
           path: pypilot-data-model
 
+      - name: Checkout NMEA 0183 connector
+        uses: actions/checkout@v4
+        with:
+          repository: bareboat-necessities/pypilot-nmea0183-connector
+          path: pypilot-nmea0183-connector
+
+      - name: Checkout Signal K connector
+        uses: actions/checkout@v4
+        with:
+          repository: bareboat-necessities/pypilot-signalk-connector
+          path: pypilot-signalk-connector
+
       - name: Install dependencies
         run: sudo apt-get update && sudo apt-get install -y cmake g++ pkg-config libevent-dev libgpiod-dev libavahi-client-dev
 
       - name: Configure
-        run: cmake -S pypilot-runtime -B build -DPYPILOT_EVENT_LOOP_DIR=$GITHUB_WORKSPACE/pypilot-event-loop -DPYPILOT_SETTINGS_DIR=$GITHUB_WORKSPACE/pypilot-settings -DPYPILOT_MDNS_DIR=$GITHUB_WORKSPACE/pypilot-mdns -DPYPILOT_DATA_MODEL_DIR=$GITHUB_WORKSPACE/pypilot-data-model/src
+        run: >-
+          cmake -S pypilot-runtime -B build
+          -DPYPILOT_EVENT_LOOP_DIR=$GITHUB_WORKSPACE/pypilot-event-loop
+          -DPYPILOT_SETTINGS_DIR=$GITHUB_WORKSPACE/pypilot-settings
+          -DPYPILOT_MDNS_DIR=$GITHUB_WORKSPACE/pypilot-mdns
+          -DPYPILOT_DATA_MODEL_DIR=$GITHUB_WORKSPACE/pypilot-data-model/src
+          -DPYPILOT_NMEA0183_CONNECTOR_DIR=$GITHUB_WORKSPACE/pypilot-nmea0183-connector
+          -DPYPILOT_SIGNALK_CONNECTOR_DIR=$GITHUB_WORKSPACE/pypilot-signalk-connector
 
       - name: Build
         run: cmake --build build --parallel
@@ -80,6 +99,18 @@ jobs:
         with:
           repository: bareboat-necessities/pypilot-data-model
           path: Arduino/libraries/pypilot-data-model
+
+      - name: Checkout NMEA 0183 connector
+        uses: actions/checkout@v4
+        with:
+          repository: bareboat-necessities/pypilot-nmea0183-connector
+          path: Arduino/libraries/pypilot-nmea0183-connector
+
+      - name: Checkout Signal K connector
+        uses: actions/checkout@v4
+        with:
+          repository: bareboat-necessities/pypilot-signalk-connector
+          path: Arduino/libraries/pypilot-signalk-connector
 
       - name: Setup Arduino CLI
         uses: arduino/setup-arduino-cli@v2
