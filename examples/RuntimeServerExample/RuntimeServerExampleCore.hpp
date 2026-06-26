@@ -1,11 +1,11 @@
 #pragma once
 
 #if defined(ARDUINO)
-#define PYPILOT_EVENT_LOOP_ENABLE_ARDUINO_WIFI_TCP
+#define ASYNC_EVENT_LOOP_ENABLE_ARDUINO_WIFI_TCP
 #include <WiFi.h>
 #endif
 
-#include <pypilot_event_loop.hpp>
+#include <async_event_loop.hpp>
 #include <pypilot_runtime.hpp>
 
 #ifndef PYPILOT_RUNTIME_EXAMPLE_PORT
@@ -17,7 +17,7 @@ static const char* WIFI_SSID = "your-ssid";
 static const char* WIFI_PASSWORD = "your-password";
 #endif
 
-pypilot_event_loop::EventLoop<32, 128> event_loop;
+async_event_loop::EventLoop<32, 128> event_loop;
 pypilot_runtime::PypilotRuntimeState runtime_state;
 pypilot_runtime::PypilotRuntimeProtocol protocol(runtime_state);
 pypilot_runtime::PypilotRuntimeServer<8, 16> server(event_loop, protocol);
