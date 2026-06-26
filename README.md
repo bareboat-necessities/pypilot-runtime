@@ -33,7 +33,7 @@ pypilot-nmea0183-connector
 pypilot-signalk-connector
 ```
 
-CMake treats these as real dependencies. Missing checkouts are fatal configuration errors, not optional feature drops.
+CMake treats these as real dependencies. Missing checkouts are fatal configuration errors, not optional feature drops. The data-model checkout must expose the current public header `ship_data_model.hpp` under its `src/` directory.
 
 The `pypilot_runtime` target links:
 
@@ -78,44 +78,3 @@ PYPILOT_NMEA0183_UDP_ENABLED
 Set the port to `0` or set enabled to `false` to disable the listener.
 
 ## Runtime mDNS helper
-
-```cpp
-#include <pypilot_runtime_mdns.hpp>
-
-pypilot_runtime::RuntimeMdnsService mdns;
-mdns.begin("pypilot");
-mdns.advertise_pypilot(23322);
-```
-
-The helper keeps mDNS mechanics outside the core runtime value dispatch. Runtime owns values and TCP protocol; `pypilot-mdns` owns DNS-SD advertisement/discovery.
-
-## Build on Linux
-
-This repository expects all required modules as sibling checkouts:
-
-```sh
-cmake -S . -B build \
-  -DPYPILOT_EVENT_LOOP_DIR=../pypilot-event-loop \
-  -DPYPILOT_SETTINGS_DIR=../pypilot-settings \
-  -DPYPILOT_MDNS_DIR=../pypilot-mdns \
-  -DPYPILOT_NMEA0183_CONNECTOR_DIR=../pypilot-nmea0183-connector \
-  -DPYPILOT_SIGNALK_CONNECTOR_DIR=../pypilot-signalk-connector
-cmake --build build
-ctest --test-dir build --output-on-failure
-```
-
-## Shared server example
-
-The real example implementation is:
-
-```text
-examples/RuntimeServerExample/RuntimeServerExample.ino
-```
-
-Linux builds this wrapper:
-
-```text
-examples/RuntimeServerExample/RuntimeServerExample.cpp
-```
-
-Arduino ESP32-S3 builds the same example directory with `arduino-cli`.
