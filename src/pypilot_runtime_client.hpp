@@ -93,19 +93,19 @@ public:
         if (name_len >= sizeof(value.name)) return false;
         memcpy(value.name, line, name_len);
         value.name[name_len] = '\0';
-        return pypilot_data_model::copy_data_text(value.payload, sizeof(value.payload), eq + 1);
+        return runtime_copy_text(value.payload, sizeof(value.payload), eq + 1, strlen(eq + 1));
     }
 
     bool read_bool(PypilotClientValue& value, bool& out) {
-        return read_value(value) && pypilot_data_model::parse_data_bool(value.payload, out);
+        return read_value(value) && runtime_parse_bool(value.payload, out);
     }
 
     bool read_number(PypilotClientValue& value, double& out) {
-        return read_value(value) && pypilot_data_model::parse_data_number(value.payload, out);
+        return read_value(value) && runtime_parse_number(value.payload, out);
     }
 
     bool read_string(PypilotClientValue& value, char* out, size_t out_size) {
-        return read_value(value) && pypilot_data_model::strip_optional_data_quotes(value.payload, out, out_size);
+        return read_value(value) && runtime_strip_optional_quotes(value.payload, out, out_size);
     }
 
     void on_connect(pypilot_event_loop::ITcpConnection& connection, const pypilot_event_loop::TcpPeerInfo&) override {
