@@ -35,6 +35,8 @@ pypilot-signalk-connector
 
 CMake treats these as real dependencies. Missing checkouts are fatal configuration errors, not optional feature drops. The data-model checkout must expose the current public header `ship_data_model.hpp` under its `src/` directory.
 
+Runtime code uses the current `ship_data_model` namespace, `FieldMeta`, and `FieldType` metadata directly. It no longer depends on the removed `pypilot_data_model.hpp` compatibility header or the removed data-dictionary API.
+
 The `pypilot_runtime` target links:
 
 ```text
