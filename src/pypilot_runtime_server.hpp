@@ -200,7 +200,7 @@ private:
             slot->has_udp_peer = false;
             return;
         }
-        pypilot_data_model::copy_data_text(slot->udp_peer.host, sizeof(slot->udp_peer.host), slot->peer.host[0] ? slot->peer.host : "127.0.0.1");
+        runtime_copy_text(slot->udp_peer.host, sizeof(slot->udp_peer.host), slot->peer.host[0] ? slot->peer.host : "127.0.0.1", strlen(slot->peer.host[0] ? slot->peer.host : "127.0.0.1"));
         slot->udp_peer.port = udp_port;
         slot->has_udp_peer = true;
     }
@@ -302,7 +302,7 @@ private:
                 remove_watch(*slot, name);
             } else {
                 double period = 0.0;
-                (void)pypilot_data_model::parse_data_number(colon, period);
+                (void)runtime_parse_number(colon, period);
                 if (add_watch(*slot, name, period)) send_formatted_value(*slot, name);
             }
             p = colon;
