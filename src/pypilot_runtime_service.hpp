@@ -13,6 +13,12 @@
 
 namespace pypilot_runtime {
 
+#if defined(__linux__) || (defined(ARDUINO) && defined(PYPILOT_EVENT_LOOP_ENABLE_ARDUINO_WIFI_UDP))
+#define PYPILOT_RUNTIME_HAS_NATIVE_UDP 1
+#else
+#define PYPILOT_RUNTIME_HAS_NATIVE_UDP 0
+#endif
+
 struct PypilotRuntimeServiceOptions {
     const char* host = "0.0.0.0";
     uint16_t tcp_port = 23322;
@@ -23,7 +29,7 @@ struct PypilotRuntimeServiceOptions {
     const char* server_version = "pypilot-cpp";
     bool enable_tcp = true;
     bool enable_periodic_publish = true;
-    bool enable_nmea0183_udp = true;
+    bool enable_nmea0183_udp = PYPILOT_RUNTIME_HAS_NATIVE_UDP != 0;
 };
 
 class PypilotRuntimeServiceSettings final {
@@ -128,7 +134,7 @@ private:
             {"runtime.tcp.port", pypilot_settings::SettingType::Number, pypilot_settings::SettingScope::Runtime, true, true, "23322", 0.0, 65535.0, 0, nullptr, 0},
             {"runtime.udp.watch.port", pypilot_settings::SettingType::Number, pypilot_settings::SettingScope::Runtime, true, true, "0", 0.0, 65535.0, 0, nullptr, 0},
             {"runtime.nmea0183.udp.port", pypilot_settings::SettingType::Number, pypilot_settings::SettingScope::Runtime, true, true, "10110", 0.0, 65535.0, 0, nullptr, 0},
-            {"runtime.nmea0183.udp.enabled", pypilot_settings::SettingType::Bool, pypilot_settings::SettingScope::Runtime, true, true, "true", 0.0, 0.0, 0, nullptr, 0},
+            {"runtime.nmea0183.udp.enabled", pypilot_settings::SettingType::Bool, pypilot_settings::SettingScope::Runtime, true, true, PYPILOT_RUNTIME_HAS_NATIVE_UDP ? "true" : "false", 0.0, 0.0, 0, nullptr, 0},
             {"runtime.publish.period.us", pypilot_settings::SettingType::Number, pypilot_settings::SettingScope::Runtime, true, true, "50000", 0.0, 60000000.0, 0, nullptr, 0},
             {"runtime.max.output.bytes", pypilot_settings::SettingType::Number, pypilot_settings::SettingScope::Runtime, true, true, "32768", 1024.0, 1048576.0, 0, nullptr, 0},
             {"runtime.tcp.enabled", pypilot_settings::SettingType::Bool, pypilot_settings::SettingScope::Runtime, true, true, "true", 0.0, 0.0, 0, nullptr, 0},
@@ -222,11 +228,13 @@ public:
             loop_.remove(publish_handle_);
             publish_handle_ = pypilot_event_loop::EventHandle{};
         }
+#if PYPILOT_RUNTIME_HAS_NATIVE_UDP
         if (nmea0183_udp_handle_.assigned()) {
             loop_.remove(nmea0183_udp_handle_);
             nmea0183_udp_handle_ = pypilot_event_loop::EventHandle{};
         }
         nmea0183_udp_stream_.close();
+#endif
         listening_ = false;
         listen_port_ = 0;
         nmea0183_udp_listening_ = false;
@@ -276,6 +284,7 @@ private:
     }
 
     bool start_nmea0183_udp() {
+#if PYPILOT_RUNTIME_HAS_NATIVE_UDP
         nmea0183_parser_.reset();
         if (!nmea0183_udp_stream_.bind(options_.nmea0183_udp_port)) {
             set_fault("failed to bind NMEA 0183 UDP port");
@@ -290,9 +299,14 @@ private:
         nmea0183_udp_listening_ = true;
         nmea0183_udp_port_ = options_.nmea0183_udp_port;
         return true;
+#else
+        set_fault("NMEA 0183 UDP is not supported by this event-loop build");
+        return false;
+#endif
     }
 
     void read_nmea0183_udp() {
+#if PYPILOT_RUNTIME_HAS_NATIVE_UDP
         uint8_t datagram[512]{};
         pypilot_event_loop::UdpEndpoint source{};
         for (size_t packets = 0; packets < 16; ++packets) {
@@ -306,6 +320,7 @@ private:
                 }
             }
         }
+#endif
     }
 
     void set_fault(const char* message) {
@@ -319,8 +334,10 @@ private:
     PypilotRuntimeState& state_;
     PypilotRuntimeServiceOptions options_{};
     pypilot_event_loop::EventHandle publish_handle_{};
+#if PYPILOT_RUNTIME_HAS_NATIVE_UDP
     pypilot_event_loop::EventHandle nmea0183_udp_handle_{};
     pypilot_event_loop::NativeUdpDatagramStream nmea0183_udp_stream_{};
+#endif
     nmea0183_connector::Nmea0183StreamParser nmea0183_parser_{};
     nmea0183_connector::Nmea0183RxConnector<float> nmea0183_connector_{};
     const char* fault_ = "";
@@ -334,5 +351,7 @@ private:
     PypilotRuntimeProtocol protocol_;
     PypilotRuntimeServer<MaxConnections, MaxWatchesPerConnection> server_;
 };
+
+#undef PYPILOT_RUNTIME_HAS_NATIVE_UDP
 
 } // namespace pypilot_runtime
