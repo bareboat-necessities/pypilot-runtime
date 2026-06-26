@@ -5,7 +5,7 @@
 #include <stdlib.h>
 #include <string.h>
 
-#include <pypilot_event_loop.hpp>
+#include <async_event_loop.hpp>
 #include <nmea0183_connector.hpp>
 #include <pypilot_runtime_core.hpp>
 #include <pypilot_runtime_server.hpp>
@@ -13,7 +13,7 @@
 
 namespace pypilot_runtime {
 
-#if defined(__linux__) || (defined(ARDUINO) && defined(PYPILOT_EVENT_LOOP_ENABLE_ARDUINO_WIFI_UDP))
+#if defined(__linux__) || (defined(ARDUINO) && defined(ASYNC_EVENT_LOOP_ENABLE_ARDUINO_WIFI_UDP))
 #define PYPILOT_RUNTIME_HAS_NATIVE_UDP 1
 #else
 #define PYPILOT_RUNTIME_HAS_NATIVE_UDP 0
@@ -226,12 +226,12 @@ public:
         server_.close();
         if (publish_handle_.assigned()) {
             loop_.remove(publish_handle_);
-            publish_handle_ = pypilot_event_loop::EventHandle{};
+            publish_handle_ = async_event_loop::EventHandle{};
         }
 #if PYPILOT_RUNTIME_HAS_NATIVE_UDP
         if (nmea0183_udp_handle_.assigned()) {
             loop_.remove(nmea0183_udp_handle_);
-            nmea0183_udp_handle_ = pypilot_event_loop::EventHandle{};
+            nmea0183_udp_handle_ = async_event_loop::EventHandle{};
         }
         nmea0183_udp_stream_.close();
 #endif
@@ -308,7 +308,7 @@ private:
     void read_nmea0183_udp() {
 #if PYPILOT_RUNTIME_HAS_NATIVE_UDP
         uint8_t datagram[512]{};
-        pypilot_event_loop::UdpEndpoint source{};
+        async_event_loop::UdpEndpoint source{};
         for (size_t packets = 0; packets < 16; ++packets) {
             const int n = nmea0183_udp_stream_.recv_from(datagram, sizeof(datagram), &source);
             if (n <= 0) return;
@@ -333,10 +333,10 @@ private:
     PypilotRuntimeState owned_state_{};
     PypilotRuntimeState& state_;
     PypilotRuntimeServiceOptions options_{};
-    pypilot_event_loop::EventHandle publish_handle_{};
+    async_event_loop::EventHandle publish_handle_{};
 #if PYPILOT_RUNTIME_HAS_NATIVE_UDP
-    pypilot_event_loop::EventHandle nmea0183_udp_handle_{};
-    pypilot_event_loop::NativeUdpDatagramStream nmea0183_udp_stream_{};
+    async_event_loop::EventHandle nmea0183_udp_handle_{};
+    async_event_loop::NativeUdpDatagramStream nmea0183_udp_stream_{};
 #endif
     nmea0183_connector::Nmea0183StreamParser nmea0183_parser_{};
     nmea0183_connector::Nmea0183RxConnector<float> nmea0183_connector_{};
