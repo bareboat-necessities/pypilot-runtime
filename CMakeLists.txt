@@ -51,13 +51,17 @@ if(NOT EXISTS "${PYPILOT_DATA_MODEL_DIR}/ship_data_model.hpp")
     message(FATAL_ERROR "pypilot-data-model public header not found at ${PYPILOT_DATA_MODEL_DIR}")
 endif()
 
+if(NOT TARGET async_event_loop)
+    message(FATAL_ERROR "async_event_loop target was not created by ${PYPILOT_EVENT_LOOP_DIR}")
+endif()
+
 add_library(pypilot_runtime INTERFACE)
 target_include_directories(pypilot_runtime INTERFACE
     ${CMAKE_CURRENT_SOURCE_DIR}/src
     ${PYPILOT_DATA_MODEL_DIR}
 )
 target_link_libraries(pypilot_runtime INTERFACE
-    pypilot_event_loop
+    async_event_loop
     pypilot_settings
     pypilot_mdns
     pypilot_nmea0183_connector
