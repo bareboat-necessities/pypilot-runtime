@@ -69,14 +69,13 @@ private:
         static const char* modes[] = {"compass", "gps", "wind"};
         static const pypilot_settings::SettingDescriptor values[] = {
             {"ap.mode", pypilot_settings::SettingType::Enum, pypilot_settings::SettingScope::Runtime, true, true, "compass", 0.0, 0.0, 0, modes, 3},
-            {"ap.pilot", pypilot_settings::SettingType::String, pypilot_settings::SettingScope::Runtime, true, true, "basic", 0.0, 0.0, 32, nullptr, 0},
-            {"servo.engaged", pypilot_settings::SettingType::Bool, pypilot_settings::SettingScope::Runtime, true, true, "false", 0.0, 0.0, 0, nullptr, 0}
+            {"ap.pilot", pypilot_settings::SettingType::String, pypilot_settings::SettingScope::Runtime, true, true, "basic", 0.0, 0.0, 32, nullptr, 0}
         };
         return values;
     }
 
     static size_t descriptor_count() {
-        return 3;
+        return 2;
     }
 };
 
