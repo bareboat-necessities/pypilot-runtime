@@ -3,7 +3,7 @@
 #include <pypilot_runtime.hpp>
 
 int main() {
-    pypilot_event_loop::EventLoop<8, 128> loop;
+    async_event_loop::EventLoop<8, 128> loop;
     pypilot_runtime::PypilotRuntimeState model;
     pypilot_runtime::PypilotRuntimeProtocol protocol(model);
     pypilot_runtime::PypilotRuntimeServer<2, 4> server(loop, protocol);
@@ -15,12 +15,12 @@ int main() {
     options.max_output_bytes = 4096;
     assert(server.configure(options));
 
-    pypilot_event_loop::TcpTimeoutOptions timeouts;
+    async_event_loop::TcpTimeoutOptions timeouts;
     timeouts.read_timeout_ms = 1000;
     timeouts.write_timeout_ms = 1000;
     server.set_tcp_timeouts(timeouts);
 
-    pypilot_event_loop::TcpWatermarkOptions watermarks;
+    async_event_loop::TcpWatermarkOptions watermarks;
     watermarks.read_low = 1;
     server.set_tcp_watermarks(watermarks);
     server.set_max_output_bytes(4096);

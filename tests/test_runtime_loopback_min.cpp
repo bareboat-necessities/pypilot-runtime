@@ -4,7 +4,7 @@
 #include <pypilot_runtime.hpp>
 #include <pypilot_runtime_client.hpp>
 
-static void pump_for(pypilot_event_loop::EventLoop<64, 128>& runtime_loop, uint32_t milliseconds) {
+static void pump_for(async_event_loop::EventLoop<64, 128>& runtime_loop, uint32_t milliseconds) {
     runtime_loop.on_delay(milliseconds, [&] {
         runtime_loop.request_exit();
     });
@@ -22,18 +22,18 @@ static bool drain_until(pypilot_runtime::PypilotRuntimeClient<>& client, const c
 }
 
 int main() {
-    pypilot_event_loop::EventLoop<64, 128> runtime_loop;
+    async_event_loop::EventLoop<64, 128> runtime_loop;
 
     pypilot_runtime::PypilotRuntimeState state;
     pypilot_runtime::PypilotRuntimeProtocol protocol(state);
     pypilot_runtime::PypilotRuntimeServer<2, 8> server(runtime_loop, protocol);
 
-    pypilot_event_loop::TcpTimeoutOptions server_timeouts;
+    async_event_loop::TcpTimeoutOptions server_timeouts;
     server_timeouts.read_timeout_ms = 1000;
     server_timeouts.write_timeout_ms = 1000;
     server.set_tcp_timeouts(server_timeouts);
 
-    pypilot_event_loop::TcpWatermarkOptions server_watermarks;
+    async_event_loop::TcpWatermarkOptions server_watermarks;
     server_watermarks.read_low = 1;
     server.set_tcp_watermarks(server_watermarks);
     server.set_max_output_bytes(4096);
@@ -41,7 +41,7 @@ int main() {
     assert(server.listen("127.0.0.1", 0));
 
     pypilot_runtime::PypilotRuntimeClient<> client(runtime_loop);
-    pypilot_event_loop::TcpTimeoutOptions client_timeouts;
+    async_event_loop::TcpTimeoutOptions client_timeouts;
     client_timeouts.read_timeout_ms = 1000;
     client_timeouts.write_timeout_ms = 1000;
     client.set_tcp_timeouts(client_timeouts);

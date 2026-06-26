@@ -18,7 +18,7 @@ bool set_env(const char* name, const char* value) {
 } // namespace
 
 int main() {
-    pypilot_event_loop::EventLoop<64, 96> loop;
+    async_event_loop::EventLoop<64, 96> loop;
     pypilot_runtime::PypilotRuntimeState model;
     pypilot_runtime::PypilotRuntimeService<decltype(loop), 2, 4> runtime(loop, model);
 
