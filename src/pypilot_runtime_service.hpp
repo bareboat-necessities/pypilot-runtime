@@ -191,8 +191,9 @@ public:
         nmea0183_udp_listening_ = false;
         nmea0183_udp_port_ = 0;
 
-        pypilot_data_model::copy_data_text(state_.server.version, sizeof(state_.server.version), options_.server_version ? options_.server_version : "pypilot-cpp");
-        if (state_.server.profile_name[0] == '\0') pypilot_data_model::copy_data_text(state_.server.profile_name, sizeof(state_.server.profile_name), "default");
+        const char* version = options_.server_version ? options_.server_version : "pypilot-cpp";
+        runtime_copy_text(state_.server.version, sizeof(state_.server.version), version, strlen(version));
+        if (state_.server.profile_name[0] == '\0') runtime_copy_text(state_.server.profile_name, sizeof(state_.server.profile_name), "default", strlen("default"));
         state_.servo.engaged.value = false;
 
         if (options_.enable_tcp && !start_server()) {
@@ -301,7 +302,7 @@ private:
             for (int i = 0; i < n; ++i) {
                 nmea0183_connector::NmeaSentence sentence;
                 if (nmea0183_parser_.push(static_cast<char>(datagram[i]), sentence)) {
-                    nmea0183_connector_.apply_sentence(sentence, state_, now_us, pypilot_data_model::SensorSource::serial);
+                    nmea0183_connector_.apply_sentence(sentence, state_, now_us, ship_data_model::SensorSource::serial);
                 }
             }
         }
